@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>konta</title>
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="konta">
+    
+    <link id="favicon" rel="icon" type="image/png" href="cat.png">
+    <link id="apple-icon" rel="apple-touch-icon" href="cat.png">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { primary: '#4f46e5', secondary: '#10b981' } } }
+        }
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        :root { color-scheme: light; }
+        .dark { color-scheme: dark; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        
+        .view-section { display: none; animation: fadeIn 0.3s ease-in-out; }
+        .view-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .swal2-popup { border-radius: 2rem !important; padding: 1.5rem !important; width: 95% !important; max-width: 450px !important; box-sizing: border-box !important; }
+        .swal2-input, .swal2-select { 
+            border-radius: 9999px !important; padding: 0.8rem 1.5rem !important;
+            border: 1px solid #e2e8f0 !important; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
+            transition: all 0.2s; font-size: 16px !important; width: 100% !important; box-sizing: border-box !important;
+        }
+        .swal2-input:focus, .swal2-select:focus { border-color: #4f46e5 !important; outline: none !important; }
+        .swal2-confirm, .swal2-cancel { border-radius: 9999px !important; padding: 0.85rem 2rem !important; font-weight: 800 !important; width: 100%; margin-top: 10px !important; }
+        .swal2-actions { flex-direction: column; width: 100%; }
+        
+        .dark .swal2-popup { background: #1e293b !important; color: #f1f5f9 !important; border: 1px solid #334155 !important; }
+        .dark .swal2-input, .dark .swal2-select { background: #334155 !important; border-color: #475569 !important; color: white !important; }
+        .dark .swal2-title, .dark .swal2-html-container { color: #f1f5f9 !important; }
+
+        .grid-auto-fit {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1rem;
+        }
+        .grid-auto-fit-lg {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+    </style>
+
+    <style type="text/tailwindcss">
+        .date-pill {
+            @apply px-4 py-3 border border-slate-200 dark:border-slate-700 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold shadow-sm transition-all text-sm cursor-pointer w-full sm:w-auto text-center truncate;
+        }
+        .btn-primary {
+            @apply bg-primary hover:bg-indigo-700 text-white font-bold py-3.5 px-6 rounded-full transition-all shadow-lg active:scale-95 flex items-center justify-center text-sm md:text-base w-full text-center truncate;
+        }
+        .btn-secondary {
+            @apply bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white hover:bg-slate-300 dark:hover:bg-slate-600 font-bold py-3.5 px-6 rounded-full transition-all shadow-sm active:scale-95 flex items-center justify-center text-sm md:text-base w-full text-center truncate;
+        }
+        .card {
+            @apply bg-white dark:bg-slate-800 rounded-[1.5rem] md:rounded-[2rem] shadow-sm border border-slate-100 dark:border-slate-700/60 p-5 md:p-8 w-full box-border;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#090e1a] text-slate-700 dark:text-slate-200 transition-colors duration-300 pb-20 md:pb-0 md:pl-[280px] min-h-screen flex flex-col md:flex-row font-sans">
+
+    <nav class="fixed bottom-0 w-full md:w-[280px] md:h-screen md:left-0 bg-white dark:bg-slate-800 border-t md:border-t-0 md:border-r border-slate-200 dark:border-slate-700/60 z-50 flex md:flex-col p-2 md:p-6 justify-around md:justify-start shadow-[0_-5px_15px_rgba(0,0,0,0.05)] md:shadow-none overflow-y-auto">
+        <div class="hidden md:flex flex-col items-center gap-3 mb-8 mt-4">
+            <img id="sidebar-logo" src="cat.png" alt="Logo" class="w-16 h-16 object-cover rounded-full shadow-lg border-2 border-white dark:border-slate-700 bg-indigo-100 dark:bg-slate-700" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%234f46e5\'><path d=\'M21 7V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7C3 5.9 3.9 5 5 5H19C20.1 5 21 5.9 21 7ZM19 7H5V17H19V7ZM16 11V13H8V11H16Z\'/></svg>'">
+            <h1 class="text-2xl font-black tracking-tight text-slate-800 dark:text-white text-center">konta</h1>
+        </div>
+        
+        <div class="flex md:flex-col gap-1 md:gap-4 w-full" id="nav-menu">
+            <button onclick="app.switchTab('dashboard')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full active transition-colors">
+                <i class="ph ph-squares-four text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Resumo</span>
+            </button>
+            <button onclick="app.switchTab('transactions')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-list-dashes text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Extrato</span>
+            </button>
+            <button onclick="app.switchTab('debts')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-notebook text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Dívidas</span>
+            </button>
+            <button onclick="app.switchTab('goals')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-piggy-bank text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Metas</span>
+            </button>
+            <button onclick="app.switchTab('settings')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-gear text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Ajustes</span>
+            </button>
+        </div>
+        <div class="hidden md:flex mt-auto pt-6 border-t border-slate-100 dark:border-slate-700/60 w-full pb-4">
+            <button onclick="app.toggleTheme()" class="flex items-center justify-center gap-3 p-4 rounded-full text-slate-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700/30 dark:hover:bg-slate-700 w-full transition-colors border border-slate-200 dark:border-slate-600">
+                <i class="ph ph-moon text-2xl dark:hidden text-slate-700"></i><i class="ph ph-sun text-2xl hidden dark:block text-amber-400"></i><span class="font-bold">Mudar Tema</span>
+            </button>
+        </div>
+    </nav>
+
+    <main class="flex-1 w-full h-full p-4 md:p-10 mx-auto max-w-full lg:max-w-7xl overflow-x-hidden">
+        
+        <header class="md:hidden flex justify-between items-center mb-6">
+            <div class="flex items-center gap-3 w-full min-w-0">
+                <img id="mobile-logo" src="cat.png" alt="Logo" class="w-10 h-10 object-cover rounded-full shadow-md border-2 border-white dark:border-slate-700 bg-indigo-100 dark:bg-slate-700 flex-shrink-0" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%234f46e5\'><path d=\'M21 7V17C21 18.1 20.1 19 19 19H5C3.9 19 3 18.1 3 17V7C3 5.9 3.9 5 5 5H19C20.1 5 21 5.9 21 7ZM19 7H5V17H19V7ZM16 11V13H8V11H16Z\'/></svg>'">
+                <h1 class="text-xl font-black text-slate-800 dark:text-white truncate">konta</h1>
+            </div>
+            <button onclick="app.toggleTheme()" class="w-10 h-10 rounded-full flex items-center justify-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm flex-shrink-0"><i class="ph ph-moon dark:hidden text-slate-700 text-lg"></i><i class="ph ph-sun hidden dark:block text-amber-400 text-lg"></i></button>
+        </header>
+
+        <section id="dashboard" class="view-section active space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Dashboard</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Resumo do período</p>
+                </div>
+                <input type="month" id="dash-month-filter" class="date-pill" onchange="app.renderDashboard()">
+            </div>
+
+            <div class="grid-auto-fit w-full">
+                <div class="card bg-gradient-to-br from-indigo-500 to-indigo-700 text-white border-none relative overflow-hidden shadow-xl shadow-indigo-500/30 flex flex-col justify-center min-h-[130px]">
+                    <i class="ph ph-wallet text-7xl absolute -right-2 -bottom-4 opacity-20 transform -rotate-12"></i>
+                    <p class="text-indigo-100 text-xs md:text-sm font-bold uppercase tracking-wide truncate">Saldo Livre</p>
+                    <h3 class="text-3xl md:text-4xl font-black mt-1 truncate" id="dash-balance">R$ 0,00</h3>
+                </div>
+                
+                <div class="card flex flex-col justify-center min-h-[130px]">
+                    <div class="flex items-center gap-2 mb-2 min-w-0">
+                        <div class="p-2 bg-emerald-100 dark:bg-emerald-500/20 rounded-full flex-shrink-0 text-emerald-500"><i class="ph ph-trend-up text-lg"></i></div>
+                        <p class="text-[11px] md:text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide truncate">Receitas</p>
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-slate-100 mt-1 truncate" id="dash-income">R$ 0,00</h3>
+                </div>
+                
+                <div class="card flex flex-col justify-center min-h-[130px]">
+                    <div class="flex items-center gap-2 mb-2 min-w-0">
+                        <div class="p-2 bg-rose-100 dark:bg-rose-500/20 rounded-full flex-shrink-0 text-rose-500"><i class="ph ph-trend-down text-lg"></i></div>
+                        <p class="text-[11px] md:text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide truncate">Despesas</p>
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-slate-100 mt-1 truncate" id="dash-expense">R$ 0,00</h3>
+                </div>
+            </div>
+
+            <div class="grid-auto-fit w-full">
+                <div class="card flex flex-col items-center justify-center min-h-[280px]">
+                    <h4 class="font-black w-full text-left mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Por Categoria</h4>
+                    <div class="relative w-full max-w-[200px] aspect-square"><canvas id="expenseChart"></canvas></div>
+                </div>
+                <div class="card md:col-span-2">
+                    <h4 class="font-black mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Orçamento Mensal</h4>
+                    <div id="budget-alerts" class="space-y-3 max-h-[250px] overflow-y-auto pr-2"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="transactions" class="view-section space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Transações</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Entradas e saídas</p>
+                </div>
+                <button onclick="app.newTransaction()" class="btn-primary sm:w-auto"><i class="ph ph-plus-circle text-xl md:text-2xl mr-2"></i> Nova Transação</button>
+            </div>
+
+            <div class="card p-0 overflow-hidden border border-slate-100 dark:border-slate-700/60 shadow-lg">
+                <div class="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/80">
+                    <h3 class="font-black text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Extrato do Mês</h3>
+                    <input type="month" id="list-month-filter" class="date-pill" onchange="app.renderTransactions()">
+                </div>
+                <div id="tx-table-body" class="divide-y divide-slate-100 dark:divide-slate-700/50"></div>
+            </div>
+        </section>
+
+        <section id="debts" class="view-section space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Caderninho</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle dívidas.</p>
+                </div>
+                <button onclick="app.newDebt()" class="btn-primary sm:w-auto"><i class="ph ph-notebook text-xl mr-2"></i> Nova Dívida</button>
+            </div>
+            <div class="grid-auto-fit w-full" id="debts-container"></div>
+        </section>
+
+        <section id="goals" class="view-section space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Cofrinhos</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Dinheiro oculto.</p>
+                </div>
+                <button onclick="app.newGoal()" class="btn-primary bg-emerald-500 hover:bg-emerald-600 sm:w-auto"><i class="ph ph-piggy-bank text-xl mr-2"></i> Novo Cofrinho</button>
+            </div>
+            <div class="grid-auto-fit w-full" id="goals-container"></div>
+        </section>
+
+        <section id="settings" class="view-section space-y-6 w-full">
+            <div>
+                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Ajustes</h2>
+                <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Gerencie tudo.</p>
+            </div>
+
+            <div class="grid-auto-fit-lg w-full">
+                
+                <div class="card space-y-6 w-full md:col-span-2">
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                        <div class="flex items-center gap-3 min-w-0 w-full">
+                            <div class="p-2.5 bg-rose-100 dark:bg-rose-900/40 rounded-full text-rose-500 flex-shrink-0"><i class="ph ph-tags text-xl"></i></div>
+                            <h3 class="font-black text-xl md:text-2xl text-slate-800 dark:text-white truncate">Categorias</h3>
+                        </div>
+                        <button onclick="app.newCategory()" class="btn-secondary bg-indigo-50 text-indigo-600 dark:bg-slate-700 dark:text-white hover:bg-indigo-100 sm:w-auto"><i class="ph ph-plus text-xl mr-2"></i> Adicionar</button>
+                    </div>
+                    <div class="grid-auto-fit w-full" id="categories-container"></div>
+                </div>
+
+                <div class="card space-y-6 w-full md:col-span-2">
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                        <div class="flex items-center gap-3 min-w-0 w-full">
+                            <div class="p-2.5 bg-amber-100 dark:bg-amber-900/40 rounded-full text-amber-500 flex-shrink-0"><i class="ph ph-arrows-clockwise text-xl"></i></div>
+                            <h3 class="font-black text-xl md:text-2xl text-slate-800 dark:text-white truncate">Contas Automáticas</h3>
+                        </div>
+                        <button onclick="app.newRecurring()" class="btn-secondary bg-indigo-50 text-indigo-600 dark:bg-slate-700 dark:text-white hover:bg-indigo-100 sm:w-auto"><i class="ph ph-plus text-xl mr-2"></i> Lançamento</button>
+                    </div>
+                    <div class="border border-slate-100 dark:border-slate-700/60 rounded-[1rem] overflow-hidden w-full">
+                        <div id="recurring-container" class="divide-y divide-slate-100 dark:divide-slate-700/50"></div>
+                    </div>
+                </div>
+
+                <div class="card space-y-6 w-full">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="p-2.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-full text-primary flex-shrink-0"><i class="ph ph-database text-2xl"></i></div>
+                        <h3 class="font-black text-xl md:text-2xl text-slate-800 dark:text-white truncate">Backup JSON</h3>
+                    </div>
+                    <p class="text-slate-500 font-medium text-sm">Salve ou recupere o sistema inteiro.</p>
+                    <div class="flex flex-col gap-3 w-full">
+                        <button onclick="app.exportJSON()" class="btn-primary w-full bg-slate-800 hover:bg-slate-900 dark:bg-indigo-600"><i class="ph ph-download-simple text-xl mr-2"></i> Exportar</button>
+                        <button onclick="document.getElementById('import-json').click()" class="btn-secondary w-full"><i class="ph ph-upload-simple text-xl mr-2"></i> Restaurar</button>
+                        <input type="file" id="import-json" class="hidden" accept=".json" onchange="app.importJSON(event)">
+                    </div>
+                </div>
+
+                <div class="card space-y-6 w-full">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="p-2.5 bg-emerald-100 dark:bg-emerald-900/40 rounded-full text-emerald-500 flex-shrink-0"><i class="ph ph-file-csv text-2xl"></i></div>
+                        <h3 class="font-black text-xl md:text-2xl text-slate-800 dark:text-white truncate">Planilhas CSV</h3>
+                    </div>
+                    <p class="text-slate-500 font-medium text-sm">Integre seus dados com o Excel.</p>
+                    <div class="flex flex-col gap-3 w-full">
+                        <button onclick="app.exportCSV()" class="btn-primary w-full bg-emerald-500 hover:bg-emerald-600"><i class="ph ph-download-simple text-xl mr-2"></i> Exportar</button>
+                        <button onclick="document.getElementById('import-csv').click()" class="btn-secondary w-full"><i class="ph ph-upload-simple text-xl mr-2"></i> Importar</button>
+                        <input type="file" id="import-csv" class="hidden" accept=".csv" onchange="app.importCSV(event)">
+                    </div>
+                </div>
+
+                <div class="md:col-span-2 mt-2">
+                    <button onclick="app.clearAllData()" class="btn-secondary w-full text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 border border-red-200 dark:border-red-900/50"><i class="ph ph-warning-circle text-xl mr-2"></i> Apagar Todos os Dados</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const defaultCategories = [
+            { id: 'c1', name: 'Aluguel', icon: '🏠', type: 'expense', budgetLimit: 0 },
+            { id: 'c2', name: 'Alimentação', icon: '🍔', type: 'expense', budgetLimit: 1000 },
+            { id: 'c3', name: 'Salário', icon: '💰', type: 'income', budgetLimit: 0 },
+            { id: 'c4', name: 'Lazer', icon: '🍿', type: 'expense', budgetLimit: 500 },
+            { id: 'c5', name: 'Transporte', icon: '🚗', type: 'expense', budgetLimit: 0 }
+        ];
+
+        window.updateSwalCat = function() {
+            const type = document.getElementById('tx-type').value;
+            const select = document.getElementById('tx-cat');
+            select.innerHTML = '';
+            app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
+                select.innerHTML += `<option value="${cat.id}">${cat.icon} ${cat.name}</option>`;
+            });
+        };
+
+        const app = {
+            state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], theme: 'light' },
+            chartInstance: null,
+
+            init() {
+                this.loadData(); this.applyTheme(); this.setDefaultsDates(); this.processRecurring(); this.updateStatusIcon();
+                const initialTab = location.hash.replace('#', '') || 'dashboard'; this.switchTab(initialTab);
+            },
+            loadData() {
+                const parse = (key, def) => JSON.parse(localStorage.getItem(`gf_${key}`)) || def;
+                this.state.transactions = parse('transactions', []); this.state.categories = parse('categories', defaultCategories);
+                this.state.recurring = parse('recurring', []); this.state.debts = parse('debts', []);
+                this.state.goals = parse('goals', []); this.state.theme = localStorage.getItem('gf_theme') || 'light';
+            },
+            saveData() {
+                localStorage.setItem('gf_transactions', JSON.stringify(this.state.transactions)); localStorage.setItem('gf_categories', JSON.stringify(this.state.categories));
+                localStorage.setItem('gf_recurring', JSON.stringify(this.state.recurring)); localStorage.setItem('gf_debts', JSON.stringify(this.state.debts));
+                localStorage.setItem('gf_goals', JSON.stringify(this.state.goals)); localStorage.setItem('gf_theme', this.state.theme);
+                this.updateStatusIcon();
+            },
+            generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); },
+            formatCurrency(val) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val); },
+            
+            updateStatusIcon() {
+                const totalIncomeAll = this.state.transactions.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const totalExpenseAll = this.state.transactions.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
+                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.savedAmount), 0);
+                const balance = totalIncomeAll - totalExpenseAll - totalGoalsSaved;
+                const iconUrl = balance >= 0 ? '1.png' : '2.png';
+                
+                const favicon = document.getElementById('favicon'); if(favicon) favicon.href = iconUrl;
+                const appleIcon = document.getElementById('apple-icon'); if(appleIcon) appleIcon.href = iconUrl;
+                const sidebarLogo = document.getElementById('sidebar-logo'); if(sidebarLogo) sidebarLogo.src = iconUrl;
+                const mobileLogo = document.getElementById('mobile-logo'); if(mobileLogo) mobileLogo.src = iconUrl;
+            },
+
+            toggleTheme() { this.state.theme = this.state.theme === 'light' ? 'dark' : 'light'; this.applyTheme(); this.saveData(); if(this.chartInstance) this.renderChart(); },
+            applyTheme() { document.documentElement.className = this.state.theme; },
+
+            switchTab(tabId) {
+                document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+                document.querySelectorAll('.nav-btn').forEach(el => { el.classList.remove('text-primary', 'bg-indigo-50', 'dark:bg-indigo-900/30', 'font-black'); if (el.getAttribute('onclick').includes(tabId)) el.classList.add('text-primary', 'bg-indigo-50', 'dark:bg-indigo-900/30', 'font-black'); });
+                document.getElementById(tabId).classList.add('active');
+                if(tabId === 'dashboard') this.renderDashboard(); if(tabId === 'transactions') this.renderTransactions();
+                if(tabId === 'debts') this.renderDebts(); if(tabId === 'goals') this.renderGoals(); if(tabId === 'settings') { this.renderCategories(); this.renderRecurringList(); }
+            },
+
+            setDefaultsDates() {
+                const now = new Date(); const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                document.getElementById('dash-month-filter').value = yearMonth; document.getElementById('list-month-filter').value = yearMonth;
+            },
+
+            processRecurring() {
+                const now = new Date(); const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; const todayNum = now.getDate(); let added = false;
+                this.state.recurring.forEach(rec => {
+                    if (rec.lastProcessedMonth !== currentMonthKey && todayNum >= rec.day) {
+                        this.state.transactions.push({ id: this.generateId(), description: rec.description, amount: rec.amount, date: `${currentMonthKey}-${String(rec.day).padStart(2, '0')}`, type: rec.type, categoryId: rec.categoryId, isRecurringAuto: true });
+                        rec.lastProcessedMonth = currentMonthKey; added = true;
+                    }
+                });
+                if (added) { this.saveData(); Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Contas fixas lançadas!', showConfirmButton: false, timer: 3000 }); }
+            },
+
+            renderDashboard() {
+                const filter = document.getElementById('dash-month-filter').value; if(!filter) return;
+                const totalIncomeAll = this.state.transactions.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const totalExpenseAll = this.state.transactions.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
+                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.savedAmount), 0);
+                const balance = totalIncomeAll - totalExpenseAll - totalGoalsSaved;
+                document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
+
+                const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter));
+                const monthIncome = monthTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
+                document.getElementById('dash-income').innerText = this.formatCurrency(monthIncome); document.getElementById('dash-expense').innerText = this.formatCurrency(monthExpense);
+
+                const alertsDiv = document.getElementById('budget-alerts'); alertsDiv.innerHTML = '';
+                const expensesByCat = {}; monthTx.filter(t => t.type === 'expense').forEach(t => { expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount); });
+
+                this.state.categories.filter(c => c.type === 'expense' && c.budgetLimit > 0).forEach(cat => {
+                    const spent = expensesByCat[cat.id] || 0; const limit = Number(cat.budgetLimit); const pct = (spent / limit) * 100;
+                    if(pct >= 80) {
+                        const isOver = pct > 100;
+                        alertsDiv.innerHTML += `
+                            <div class="p-4 rounded-2xl flex flex-col gap-2 ${isOver ? 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300' : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'} w-full">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${cat.name}</span></div>
+                                    <span class="font-black text-base flex-shrink-0">${pct.toFixed(0)}%</span>
+                                </div>
+                                <div class="w-full bg-black/5 dark:bg-white/10 rounded-full h-2 mt-1"><div class="${isOver ? 'bg-red-500' : 'bg-yellow-500'} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div></div>
+                                <div class="text-right text-xs font-bold opacity-80 truncate w-full">${this.formatCurrency(spent)} / ${this.formatCurrency(limit)}</div>
+                            </div>
+                        `;
+                    }
+                });
+                if(alertsDiv.innerHTML === '') alertsDiv.innerHTML = '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhum limite excedido.</div>';
+                this.renderChart(expensesByCat);
+            },
+
+            renderChart(expensesByCat = null) {
+                if(!expensesByCat) {
+                    const filter = document.getElementById('dash-month-filter').value; const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type === 'expense');
+                    expensesByCat = {}; monthTx.forEach(t => expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount));
+                }
+                const ctx = document.getElementById('expenseChart').getContext('2d'); if (this.chartInstance) this.chartInstance.destroy();
+                const labels = []; const data = []; const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#10b981', '#0ea5e9'];
+                Object.keys(expensesByCat).forEach(catId => { if (expensesByCat[catId] > 0) { const cat = this.state.categories.find(c => c.id === catId); labels.push(cat ? `${cat.icon} ${cat.name}` : 'Outros'); data.push(expensesByCat[catId]); } });
+                const isDark = this.state.theme === 'dark';
+                if(data.length === 0) { labels.push('Sem despesas'); data.push(1); colors.unshift(isDark ? '#334155' : '#f1f5f9'); }
+                this.chartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, borderRadius: 20 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark ? '#1e293b' : '#ffffff', titleColor: isDark ? '#f8fafc' : '#0f172a', bodyColor: isDark ? '#cbd5e1' : '#475569', padding: 12, cornerRadius: 16, displayColors: false, callbacks: { label: (ctx) => data[0] === 1 && labels[0]==='Sem despesas' ? '' : this.formatCurrency(ctx.raw) } } } } });
+            },
+
+            async newTransaction() {
+                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                const today = new Date().toISOString().split('T')[0];
+                const { value: formValues } = await Swal.fire({
+                    title: 'Nova Transação',
+                    html: `<input id="tx-desc" class="swal2-input" placeholder="O que foi?"><input id="tx-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)"><input id="tx-date" type="date" class="swal2-input" value="${today}"><select id="tx-type" class="swal2-select font-bold" onchange="window.updateSwalCat()"><option value="expense">Despesa (Saída)</option><option value="income">Receita (Entrada)</option></select><select id="tx-cat" class="swal2-select">${catOpts('expense')}</select>`,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        const desc = document.getElementById('tx-desc').value; const val = document.getElementById('tx-val').value;
+                        const date = document.getElementById('tx-date').value; const type = document.getElementById('tx-type').value; const cat = document.getElementById('tx-cat').value;
+                        if (!desc || !val || !date || !cat) { Swal.showValidationMessage('Preencha os campos!'); return false; }
+                        return { desc, val, date, type, cat };
+                    }
+                });
+                if (formValues) { this.state.transactions.push({ id: this.generateId(), description: formValues.desc, amount: Number(formValues.val), date: formValues.date, type: formValues.type, categoryId: formValues.cat }); this.saveData(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Salvo!', showConfirmButton: false, timer: 1500 }); this.renderTransactions(); }
+            },
+            deleteTransaction(id) { Swal.fire({ title: 'Excluir?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if (res.isConfirmed) { this.state.transactions = this.state.transactions.filter(t => t.id !== id); this.saveData(); this.renderTransactions(); } }); },
+            renderTransactions() {
+                const filter = document.getElementById('list-month-filter').value; const tbody = document.getElementById('tx-table-body'); tbody.innerHTML = '';
+                const filtered = this.state.transactions.filter(t => t.date.startsWith(filter)).sort((a,b) => new Date(b.date) - new Date(a.date));
+                if (filtered.length === 0) { tbody.innerHTML = `<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhum registro encontrado.</div>`; return; }
+                filtered.forEach(tx => {
+                    const cat = this.state.categories.find(c => c.id === tx.categoryId); const isInc = tx.type === 'income'; const [y,m,d] = tx.date.split('-');
+                    tbody.innerHTML += `
+                        <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
+                            <div class="flex items-center gap-3 flex-1 min-w-0">
+                                <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>
+                                <div class="flex flex-col min-w-0 flex-1">
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full">${tx.description}</span>
+                                    <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate w-full">${d}/${m} • ${cat ? cat.name : 'Outros'}</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right ${isInc ? 'text-emerald-500' : 'text-rose-500'}">${isInc ? '+' : '-'} ${this.formatCurrency(tx.amount)}</span>
+                                <button onclick="app.deleteTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95 flex-shrink-0"><i class="ph ph-trash text-lg"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+
+            async newDebt() {
+                const { value: formValues } = await Swal.fire({ title: 'Nova Dívida', html: `<input id="swal-d-title" class="swal2-input" placeholder="Nome (Ex: Fatura)"><input id="swal-d-val" type="number" step="0.01" class="swal2-input" placeholder="Valor Total (R$)">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Criar', cancelButtonText: 'Cancelar', preConfirm: () => { return { title: document.getElementById('swal-d-title').value, totalAmount: Number(document.getElementById('swal-d-val').value) } } });
+                if (formValues && formValues.title && formValues.totalAmount) { this.state.debts.push({ id: this.generateId(), title: formValues.title, totalAmount: formValues.totalAmount, paidAmount: 0 }); this.saveData(); this.renderDebts(); }
+            },
+            async payDebt(id) {
+                const debt = this.state.debts.find(d => d.id === id); const remaining = debt.totalAmount - debt.paidAmount;
+                const { value: amount } = await Swal.fire({ title: `Amortizar`, html: `<p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${debt.title}</p><p class="text-sm">Resta: ${this.formatCurrency(remaining)}</p>`, input: 'number', inputPlaceholder: 'Valor', showCancelButton: true, confirmButtonText: 'Pagar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; if (val > remaining) return 'Valor maior que a dívida!'; } });
+                if (amount) {
+                    debt.paidAmount += Number(amount);
+                    let cat = this.state.categories.find(c => c.name === 'Pagamento de Dívida');
+                    if(!cat) { cat = { id: this.generateId(), name: 'Pagamento de Dívida', icon: '💸', type: 'expense', budgetLimit: 0 }; this.state.categories.push(cat); }
+                    this.state.transactions.push({ id: this.generateId(), description: `Pag. Dívida: ${debt.title}`, amount: Number(amount), date: new Date().toISOString().split('T')[0], type: 'expense', categoryId: cat.id });
+                    this.saveData(); this.renderDebts(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Debitado!', showConfirmButton: false, timer: 2000 });
+                }
+            },
+            deleteDebt(id) { Swal.fire({ title: 'Apagar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.debts = this.state.debts.filter(d => d.id !== id); this.saveData(); this.renderDebts(); } }); },
+            renderDebts() {
+                const container = document.getElementById('debts-container'); container.innerHTML = '';
+                if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; return; }
+                this.state.debts.forEach(d => {
+                    const remaining = d.totalAmount - d.paidAmount; const pct = Math.min(100, (d.paidAmount / d.totalAmount) * 100); const isPaid = remaining <= 0;
+                    container.innerHTML += `
+                        <div class="card p-5 flex flex-col justify-between gap-3 w-full">
+                            <div class="flex justify-between items-start gap-2 w-full min-w-0">
+                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${d.title}</h3>
+                                ${isPaid ? '<span class="bg-emerald-500 text-white text-[10px] px-3 py-1 rounded-full font-black flex-shrink-0">QUITADO</span>' : ''}
+                            </div>
+                            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5"><div class="bg-indigo-500 h-2 rounded-full" style="width: ${pct}%"></div></div>
+                            <div class="flex justify-between text-xs w-full mt-1">
+                                <div class="flex flex-col min-w-0"><span class="text-slate-500 font-bold">Total</span><span class="font-bold text-slate-800 dark:text-slate-200 truncate">${this.formatCurrency(d.totalAmount)}</span></div>
+                                <div class="flex flex-col text-right min-w-0"><span class="text-rose-500 font-bold">Falta</span><span class="font-black text-rose-500 truncate">${this.formatCurrency(remaining)}</span></div>
+                            </div>
+                            <div class="flex gap-2 mt-2 w-full">
+                                ${!isPaid ? `<button onclick="app.payDebt('${d.id}')" class="btn-primary flex-1 !py-3 !text-sm">Pagar</button>` : ''}
+                                <button onclick="app.deleteDebt('${d.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-trash text-lg"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+
+            async newGoal() {
+                const { value: formValues } = await Swal.fire({ title: 'Novo Cofrinho', html: `<input id="swal-g-title" class="swal2-input" placeholder="Objetivo?"><input id="swal-g-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Criar', cancelButtonText: 'Cancelar', preConfirm: () => { return { title: document.getElementById('swal-g-title').value, targetAmount: Number(document.getElementById('swal-g-val').value) } } });
+                if (formValues && formValues.title && formValues.targetAmount) { this.state.goals.push({ id: this.generateId(), title: formValues.title, targetAmount: formValues.targetAmount, savedAmount: 0 }); this.saveData(); this.renderGoals(); }
+            },
+            async fundGoal(id) {
+                const goal = this.state.goals.find(g => g.id === id);
+                const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${goal.title}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
+                if (amount) { goal.savedAmount += Number(amount); this.saveData(); this.renderGoals(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); }
+            },
+            deleteGoal(id) { Swal.fire({ title: 'Quebrar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.goals = this.state.goals.filter(g => g.id !== id); this.saveData(); this.renderGoals(); } }); },
+            renderGoals() {
+                const container = document.getElementById('goals-container'); container.innerHTML = '';
+                if (this.state.goals.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhum cofrinho criado.</div>'; return; }
+                this.state.goals.forEach(g => {
+                    const pct = Math.min(100, (g.savedAmount / g.targetAmount) * 100); const isDone = g.savedAmount >= g.targetAmount;
+                    container.innerHTML += `
+                        <div class="card border-2 p-5 ${isDone ? 'border-emerald-500/50 bg-emerald-50/40 dark:bg-emerald-900/10' : 'border-transparent'} flex flex-col justify-between gap-3 w-full">
+                            <div class="flex justify-between items-start gap-2 w-full min-w-0">
+                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${g.title}</h3>
+                                ${isDone ? '<i class="ph ph-check-circle text-emerald-500 text-2xl flex-shrink-0"></i>' : ''}
+                            </div>
+                            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5"><div class="${isDone ? 'bg-emerald-500' : 'bg-primary'} h-2 rounded-full" style="width: ${pct}%"></div></div>
+                            <div class="flex justify-between text-xs w-full mt-1">
+                                <div class="flex flex-col min-w-0"><span class="text-slate-500 font-bold">Guardado</span><span class="font-black text-slate-800 dark:text-slate-100 truncate">${this.formatCurrency(g.savedAmount)}</span></div>
+                                <div class="flex flex-col text-right min-w-0"><span class="text-slate-500 font-bold">Alvo</span><span class="font-bold text-slate-500 truncate">${this.formatCurrency(g.targetAmount)}</span></div>
+                            </div>
+                            <div class="flex gap-2 mt-2 w-full">
+                                <button onclick="app.fundGoal('${g.id}')" class="btn-primary flex-1 !py-3 !text-sm ${isDone?'bg-emerald-600':''}" ${isDone?'disabled':''}>${isDone ? 'Atingida' : 'Guardar'}</button>
+                                <button onclick="app.deleteGoal('${g.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-trash text-lg"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+
+            async newCategory() {
+                const { value: formValues } = await Swal.fire({ title: 'Categoria', html: `<input id="c-name" class="swal2-input" placeholder="Nome"><input id="c-icon" class="swal2-input" placeholder="1 Emoji"><select id="c-type" class="swal2-select font-bold"><option value="expense">Despesa</option><option value="income">Receita</option></select><input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal (Opcional)">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { name: document.getElementById('c-name').value, icon: document.getElementById('c-icon').value || '📌', type: document.getElementById('c-type').value, budgetLimit: Number(document.getElementById('c-limit').value || 0) } } });
+                if (formValues && formValues.name) { this.state.categories.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderCategories(); }
+            },
+            async editCategory(id) {
+                const cat = this.state.categories.find(c => c.id === id); if (!cat) return;
+                const { value: formValues } = await Swal.fire({ title: 'Editar Categoria', html: `<input id="c-name" class="swal2-input" value="${cat.name}"><input id="c-icon" class="swal2-input" value="${cat.icon}"><select id="c-type" class="swal2-select font-bold"><option value="expense" ${cat.type === 'expense' ? 'selected' : ''}>Despesa</option><option value="income" ${cat.type === 'income' ? 'selected' : ''}>Receita</option></select><input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal" value="${cat.budgetLimit || ''}">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { name: document.getElementById('c-name').value, icon: document.getElementById('c-icon').value || '📌', type: document.getElementById('c-type').value, budgetLimit: Number(document.getElementById('c-limit').value || 0) } } });
+                if (formValues && formValues.name) { cat.name = formValues.name; cat.icon = formValues.icon; cat.type = formValues.type; cat.budgetLimit = formValues.budgetLimit; this.saveData(); this.renderCategories(); this.renderDashboard(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizada!', showConfirmButton: false, timer: 1500 }); }
+            },
+            deleteCategory(id) {
+                if(this.state.transactions.some(t => t.categoryId === id)) { Swal.fire('Aviso', 'Exclua as transações dessa categoria primeiro.', 'error'); return; }
+                this.state.categories = this.state.categories.filter(c => c.id !== id); this.saveData(); this.renderCategories();
+            },
+            renderCategories() {
+                const container = document.getElementById('categories-container'); container.innerHTML = '';
+                this.state.categories.forEach(c => {
+                    container.innerHTML += `
+                        <div class="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm w-full gap-2">
+                            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${c.icon}</div>
+                            
+                            <div class="flex flex-col flex-1 min-w-0 pr-1">
+                                <span class="font-black text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${c.name}</span>
+                                ${c.budgetLimit > 0 ? `<span class="text-[9px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-full uppercase mt-0.5 truncate w-max max-w-full block">Teto: ${this.formatCurrency(c.budgetLimit)}</span>` : ''}
+                            </div>
+                            
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <button onclick="app.editCategory('${c.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95"><i class="ph ph-pencil-simple text-base"></i></button>
+                                <button onclick="app.deleteCategory('${c.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95"><i class="ph ph-x text-base"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+
+            async newRecurring() {
+                const catOpts = this.state.categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                const { value: formValues } = await Swal.fire({ title: 'Lançamento Fixo', html: `<input id="r-desc" class="swal2-input" placeholder="Nome (Ex: Netflix)"><input id="r-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)"><input id="r-day" type="number" min="1" max="31" class="swal2-input" placeholder="Todo dia... (1 a 31)"><select id="r-type" class="swal2-select font-bold"><option value="expense">Despesa Fixa</option><option value="income">Receita Fixa</option></select><select id="r-cat" class="swal2-select">${catOpts}</select>`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { description: document.getElementById('r-desc').value, amount: Number(document.getElementById('r-val').value), day: Number(document.getElementById('r-day').value), type: document.getElementById('r-type').value, categoryId: document.getElementById('r-cat').value, lastProcessedMonth: null } } });
+                if (formValues && formValues.description && formValues.day && formValues.amount) { this.state.recurring.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderRecurringList(); this.processRecurring(); }
+            },
+            deleteRecurring(id) { this.state.recurring = this.state.recurring.filter(r => r.id !== id); this.saveData(); this.renderRecurringList(); },
+            renderRecurringList() {
+                const container = document.getElementById('recurring-container'); container.innerHTML = '';
+                if(this.state.recurring.length === 0){ container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhuma conta fixa.</div>'; return; }
+                this.state.recurring.forEach(r => {
+                    const isInc = r.type === 'income';
+                    container.innerHTML += `
+                        <div class="flex items-center justify-between p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors gap-2 w-full">
+                            <div class="flex items-center gap-3 flex-1 min-w-0">
+                                <div class="w-9 h-9 rounded-full bg-indigo-50 dark:bg-slate-700/50 flex items-center justify-center font-black text-indigo-500 flex-shrink-0 text-[10px] border border-slate-200 dark:border-slate-600">D.${String(r.day).padStart(2,'0')}</div>
+                                <span class="font-bold text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${r.description}</span>
+                            </div>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <span class="font-black text-sm ${isInc ? 'text-emerald-500' : 'text-rose-500'} truncate max-w-[80px]">${this.formatCurrency(r.amount)}</span>
+                                <button onclick="app.deleteRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-transparent active:scale-95"><i class="ph ph-trash text-lg"></i></button>
+                            </div>
+                        </div>
+                    `;
+                });
+            },
+            exportJSON() { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.state)); const dlAnchorElem = document.createElement('a'); dlAnchorElem.setAttribute("href", dataStr); dlAnchorElem.setAttribute("download", `konta_backup.json`); dlAnchorElem.click(); },
+            importJSON(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const parsed = JSON.parse(ev.target.result); if(parsed.transactions) { Object.assign(this.state, parsed); this.saveData(); Swal.fire('Restaurado!', 'O backup foi carregado.', 'success').then(() => location.reload()); } else throw new Error(); } catch (err) { Swal.fire('Ops!', 'O arquivo não é válido.', 'error'); } }; reader.readAsText(file); e.target.value = ''; },
+            exportCSV() { let csv = 'Data;Tipo;Categoria;Descricao;Valor\n'; this.state.transactions.forEach(t => { const cat = this.state.categories.find(c => c.id === t.categoryId)?.name || 'Outros'; csv += `${t.date};${t.type};${cat};${t.description};${t.amount}\n`; }); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.setAttribute('href', url); a.setAttribute('download', `konta_planilha.csv`); a.click(); },
+            importCSV(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const lines = ev.target.result.split('\n'); let count = 0; for(let i = 1; i < lines.length; i++) { const line = lines[i].trim(); if(!line) continue; const [date, type, catName, desc, val] = line.split(';'); if(date && type && desc && val) { let cat = this.state.categories.find(c => c.name.toLowerCase() === catName.toLowerCase()); if(!cat) { cat = { id: this.generateId(), name: catName, icon: '📁', type, budgetLimit: 0 }; this.state.categories.push(cat); } this.state.transactions.push({ id: this.generateId(), date, type, categoryId: cat.id, description: desc, amount: Number(val) }); count++; } } this.saveData(); Swal.fire('Pronto!', `${count} transações importadas!`, 'success').then(() => { this.renderCategories(); }); } catch (err) { Swal.fire('Ops!', 'Verifique o arquivo CSV.', 'error'); } }; reader.readAsText(file); e.target.value = ''; },
+            clearAllData() { Swal.fire({ title: 'Tem Certeza Absoluta?', text: 'Digite APAGAR abaixo:', input: 'text', icon: 'error', showCancelButton: true, confirmButtonText: 'Confirmar Exclusão', cancelButtonText: 'Cancelar' }).then((res) => { if (res.value === 'APAGAR') { localStorage.clear(); location.reload(); } }); }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => { app.init(); });
+    </script>
+</body>
+</html>
