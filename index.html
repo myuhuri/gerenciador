@@ -10,8 +10,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="konta">
     
-    <link id="favicon" rel="icon" type="image/png" href="cat.png">
-    <link id="apple-icon" rel="apple-touch-icon" href="cat.png">
+    <link rel="icon" type="image/png" href="cat.png">
+    <link rel="apple-touch-icon" href="cat.png">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -319,8 +319,6 @@
                 const balance = totalIncomeAll - totalExpenseAll - totalGoalsSaved;
                 const iconUrl = balance >= 0 ? '1.png' : '2.png';
                 
-                const favicon = document.getElementById('favicon'); if(favicon) favicon.href = iconUrl;
-                const appleIcon = document.getElementById('apple-icon'); if(appleIcon) appleIcon.href = iconUrl;
                 const sidebarLogo = document.getElementById('sidebar-logo'); if(sidebarLogo) sidebarLogo.src = iconUrl;
                 const mobileLogo = document.getElementById('mobile-logo'); if(mobileLogo) mobileLogo.src = iconUrl;
             },
