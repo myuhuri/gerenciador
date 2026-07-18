@@ -45,7 +45,7 @@
             transition: all 0.2s; font-size: 16px !important; width: 100% !important; box-sizing: border-box !important;
         }
         .swal2-input:focus, .swal2-select:focus { border-color: #4f46e5 !important; outline: none !important; }
-        .swal2-confirm, .swal2-cancel { border-radius: 9999px !important; padding: 0.85rem 2rem !important; font-weight: 800 !important; width: 100%; margin-top: 10px !important; }
+        .swal2-confirm, .swal2-cancel, .swal2-deny { border-radius: 9999px !important; padding: 0.85rem 2rem !important; font-weight: 800 !important; width: 100%; margin-top: 10px !important; }
         .swal2-actions { flex-direction: column; width: 100%; }
         
         .dark .swal2-popup { background: #1e293b !important; color: #f1f5f9 !important; border: 1px solid #334155 !important; }
@@ -159,9 +159,15 @@
                     <h4 class="font-black w-full text-left mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Por Categoria</h4>
                     <div class="relative w-full max-w-[200px] aspect-square"><canvas id="expenseChart"></canvas></div>
                 </div>
-                <div class="card md:col-span-2">
-                    <h4 class="font-black mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Orçamento Mensal</h4>
-                    <div id="budget-alerts" class="space-y-3 max-h-[250px] overflow-y-auto pr-2"></div>
+                <div class="flex flex-col gap-6 md:col-span-2">
+                    <div class="card w-full">
+                        <h4 class="font-black mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Orçamento Mensal</h4>
+                        <div id="budget-alerts" class="space-y-3 max-h-[250px] overflow-y-auto pr-2"></div>
+                    </div>
+                    <div class="card w-full">
+                        <h4 class="font-black mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Despesas Fixas</h4>
+                        <div id="dash-fixed-expenses" class="space-y-3 max-h-[250px] overflow-y-auto pr-2"></div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -285,7 +291,7 @@
             const select = document.getElementById('tx-cat');
             select.innerHTML = '';
             app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
-                select.innerHTML += `<option value="${cat.id}">${cat.icon} ${cat.name}</option>`;
+                select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
             });
         };
 
@@ -297,6 +303,12 @@
                 this.loadData(); this.applyTheme(); this.setDefaultsDates(); this.processRecurring(); this.updateStatusIcon();
                 const initialTab = location.hash.replace('#', '') || 'dashboard'; this.switchTab(initialTab);
             },
+            
+            escapeHTML(str) {
+                if (typeof str !== 'string') return str;
+                return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
+            },
+
             loadData() {
                 const parse = (key, def) => JSON.parse(localStorage.getItem(`gf_${key}`)) || def;
                 this.state.transactions = parse('transactions', []); this.state.categories = parse('categories', defaultCategories);
@@ -340,10 +352,26 @@
             },
 
             processRecurring() {
-                const now = new Date(); const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; const todayNum = now.getDate(); let added = false;
+                const now = new Date(); 
+                const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; 
+                const todayNum = now.getDate(); 
+                
+                const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                
+                let added = false;
                 this.state.recurring.forEach(rec => {
-                    if (rec.lastProcessedMonth !== currentMonthKey && todayNum >= rec.day) {
-                        this.state.transactions.push({ id: this.generateId(), description: rec.description, amount: rec.amount, date: `${currentMonthKey}-${String(rec.day).padStart(2, '0')}`, type: rec.type, categoryId: rec.categoryId, isRecurringAuto: true });
+                    const targetDay = Math.min(rec.day, lastDayOfMonth);
+                    if (rec.lastProcessedMonth !== currentMonthKey && todayNum >= targetDay) {
+                        this.state.transactions.push({ 
+                            id: this.generateId(), 
+                            recurringId: rec.id,
+                            description: rec.description, 
+                            amount: rec.amount, 
+                            date: `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`, 
+                            type: rec.type, 
+                            categoryId: rec.categoryId, 
+                            isRecurringAuto: true 
+                        });
                         rec.lastProcessedMonth = currentMonthKey; added = true;
                     }
                 });
@@ -373,7 +401,7 @@
                         alertsDiv.innerHTML += `
                             <div class="p-4 rounded-2xl flex flex-col gap-2 ${isOver ? 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300' : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'} w-full">
                                 <div class="flex items-center justify-between gap-2">
-                                    <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${cat.name}</span></div>
+                                    <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${this.escapeHTML(cat.name)}</span></div>
                                     <span class="font-black text-base flex-shrink-0">${pct.toFixed(0)}%</span>
                                 </div>
                                 <div class="w-full bg-black/5 dark:bg-white/10 rounded-full h-2 mt-1"><div class="${isOver ? 'bg-red-500' : 'bg-yellow-500'} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div></div>
@@ -383,6 +411,21 @@
                     }
                 });
                 if(alertsDiv.innerHTML === '') alertsDiv.innerHTML = '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhum limite excedido.</div>';
+                
+                const fixedDiv = document.getElementById('dash-fixed-expenses'); fixedDiv.innerHTML = '';
+                const fixedExpenses = this.state.recurring.filter(r => r.type === 'expense');
+                let totalFixed = 0;
+                if(fixedExpenses.length === 0) {
+                    fixedDiv.innerHTML = '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhuma despesa fixa cadastrada.</div>';
+                } else {
+                    fixedExpenses.forEach(r => {
+                        totalFixed += Number(r.amount);
+                        const cat = this.state.categories.find(c => c.id === r.categoryId);
+                        fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl w-full mb-2"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-sm shadow-sm border border-slate-100 dark:border-slate-700/50">${cat ? cat.icon : '💸'}</div><span class="font-bold text-slate-700 dark:text-slate-200 text-sm">${this.escapeHTML(r.description)}</span></div><span class="font-black text-rose-500">${this.formatCurrency(r.amount)}</span></div>`;
+                    });
+                    fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 mt-2 border-t border-slate-200 dark:border-slate-700 w-full"><span class="font-black text-slate-800 dark:text-slate-200 text-sm">Total Fixo:</span><span class="font-black text-rose-500">${this.formatCurrency(totalFixed)}</span></div>`;
+                }
+
                 this.renderChart(expensesByCat);
             },
 
@@ -393,14 +436,14 @@
                 }
                 const ctx = document.getElementById('expenseChart').getContext('2d'); if (this.chartInstance) this.chartInstance.destroy();
                 const labels = []; const data = []; const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#10b981', '#0ea5e9'];
-                Object.keys(expensesByCat).forEach(catId => { if (expensesByCat[catId] > 0) { const cat = this.state.categories.find(c => c.id === catId); labels.push(cat ? `${cat.icon} ${cat.name}` : 'Outros'); data.push(expensesByCat[catId]); } });
+                Object.keys(expensesByCat).forEach(catId => { if (expensesByCat[catId] > 0) { const cat = this.state.categories.find(c => c.id === catId); labels.push(cat ? `${cat.icon} ${this.escapeHTML(cat.name)}` : 'Outros'); data.push(expensesByCat[catId]); } });
                 const isDark = this.state.theme === 'dark';
                 if(data.length === 0) { labels.push('Sem despesas'); data.push(1); colors.unshift(isDark ? '#334155' : '#f1f5f9'); }
                 this.chartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, borderRadius: 20 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark ? '#1e293b' : '#ffffff', titleColor: isDark ? '#f8fafc' : '#0f172a', bodyColor: isDark ? '#cbd5e1' : '#475569', padding: 12, cornerRadius: 16, displayColors: false, callbacks: { label: (ctx) => data[0] === 1 && labels[0]==='Sem despesas' ? '' : this.formatCurrency(ctx.raw) } } } } });
             },
 
             async newTransaction() {
-                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
                 const today = new Date().toISOString().split('T')[0];
                 const { value: formValues } = await Swal.fire({
                     title: 'Nova Transação',
@@ -427,8 +470,8 @@
                             <div class="flex items-center gap-3 flex-1 min-w-0">
                                 <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>
                                 <div class="flex flex-col min-w-0 flex-1">
-                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full">${tx.description}</span>
-                                    <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate w-full">${d}/${m} • ${cat ? cat.name : 'Outros'}</span>
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full">${this.escapeHTML(tx.description)}</span>
+                                    <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate w-full">${d}/${m} • ${cat ? this.escapeHTML(cat.name) : 'Outros'}</span>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2 flex-shrink-0">
@@ -446,7 +489,7 @@
             },
             async payDebt(id) {
                 const debt = this.state.debts.find(d => d.id === id); const remaining = debt.totalAmount - debt.paidAmount;
-                const { value: amount } = await Swal.fire({ title: `Amortizar`, html: `<p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${debt.title}</p><p class="text-sm">Resta: ${this.formatCurrency(remaining)}</p>`, input: 'number', inputPlaceholder: 'Valor', showCancelButton: true, confirmButtonText: 'Pagar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; if (val > remaining) return 'Valor maior que a dívida!'; } });
+                const { value: amount } = await Swal.fire({ title: `Amortizar`, html: `<p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${this.escapeHTML(debt.title)}</p><p class="text-sm">Resta: ${this.formatCurrency(remaining)}</p>`, input: 'number', inputPlaceholder: 'Valor', showCancelButton: true, confirmButtonText: 'Pagar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; if (val > remaining) return 'Valor maior que a dívida!'; } });
                 if (amount) {
                     debt.paidAmount += Number(amount);
                     let cat = this.state.categories.find(c => c.name === 'Pagamento de Dívida');
@@ -464,7 +507,7 @@
                     container.innerHTML += `
                         <div class="card p-5 flex flex-col justify-between gap-3 w-full">
                             <div class="flex justify-between items-start gap-2 w-full min-w-0">
-                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${d.title}</h3>
+                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${this.escapeHTML(d.title)}</h3>
                                 ${isPaid ? '<span class="bg-emerald-500 text-white text-[10px] px-3 py-1 rounded-full font-black flex-shrink-0">QUITADO</span>' : ''}
                             </div>
                             <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5"><div class="bg-indigo-500 h-2 rounded-full" style="width: ${pct}%"></div></div>
@@ -487,7 +530,7 @@
             },
             async fundGoal(id) {
                 const goal = this.state.goals.find(g => g.id === id);
-                const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${goal.title}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
+                const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${this.escapeHTML(goal.title)}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
                 if (amount) { goal.savedAmount += Number(amount); this.saveData(); this.renderGoals(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); }
             },
             deleteGoal(id) { Swal.fire({ title: 'Quebrar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.goals = this.state.goals.filter(g => g.id !== id); this.saveData(); this.renderGoals(); } }); },
@@ -499,7 +542,7 @@
                     container.innerHTML += `
                         <div class="card border-2 p-5 ${isDone ? 'border-emerald-500/50 bg-emerald-50/40 dark:bg-emerald-900/10' : 'border-transparent'} flex flex-col justify-between gap-3 w-full">
                             <div class="flex justify-between items-start gap-2 w-full min-w-0">
-                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${g.title}</h3>
+                                <h3 class="font-black text-xl text-slate-800 dark:text-white truncate flex-1">${this.escapeHTML(g.title)}</h3>
                                 ${isDone ? '<i class="ph ph-check-circle text-emerald-500 text-2xl flex-shrink-0"></i>' : ''}
                             </div>
                             <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5"><div class="${isDone ? 'bg-emerald-500' : 'bg-primary'} h-2 rounded-full" style="width: ${pct}%"></div></div>
@@ -527,6 +570,12 @@
             },
             deleteCategory(id) {
                 if(this.state.transactions.some(t => t.categoryId === id)) { Swal.fire('Aviso', 'Exclua as transações dessa categoria primeiro.', 'error'); return; }
+                
+                if(this.state.recurring.some(r => r.categoryId === id)) { 
+                    Swal.fire('Aviso', 'Esta categoria está sendo usada em uma Conta Automática. Altere ou exclua a conta antes de apagar a categoria.', 'error'); 
+                    return; 
+                }
+
                 this.state.categories = this.state.categories.filter(c => c.id !== id); this.saveData(); this.renderCategories();
             },
             renderCategories() {
@@ -537,7 +586,7 @@
                             <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${c.icon}</div>
                             
                             <div class="flex flex-col flex-1 min-w-0 pr-1">
-                                <span class="font-black text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${c.name}</span>
+                                <span class="font-black text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${this.escapeHTML(c.name)}</span>
                                 ${c.budgetLimit > 0 ? `<span class="text-[9px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-full uppercase mt-0.5 truncate w-max max-w-full block">Teto: ${this.formatCurrency(c.budgetLimit)}</span>` : ''}
                             </div>
                             
@@ -551,11 +600,110 @@
             },
 
             async newRecurring() {
-                const catOpts = this.state.categories.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+                const catOpts = this.state.categories.map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
                 const { value: formValues } = await Swal.fire({ title: 'Lançamento Fixo', html: `<input id="r-desc" class="swal2-input" placeholder="Nome (Ex: Netflix)"><input id="r-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)"><input id="r-day" type="number" min="1" max="31" class="swal2-input" placeholder="Todo dia... (1 a 31)"><select id="r-type" class="swal2-select font-bold"><option value="expense">Despesa Fixa</option><option value="income">Receita Fixa</option></select><select id="r-cat" class="swal2-select">${catOpts}</select>`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { description: document.getElementById('r-desc').value, amount: Number(document.getElementById('r-val').value), day: Number(document.getElementById('r-day').value), type: document.getElementById('r-type').value, categoryId: document.getElementById('r-cat').value, lastProcessedMonth: null } } });
                 if (formValues && formValues.description && formValues.day && formValues.amount) { this.state.recurring.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderRecurringList(); this.processRecurring(); }
             },
-            deleteRecurring(id) { this.state.recurring = this.state.recurring.filter(r => r.id !== id); this.saveData(); this.renderRecurringList(); },
+            
+            async editRecurring(id) {
+                const rec = this.state.recurring.find(r => r.id === id);
+                if (!rec) return;
+                const catOpts = this.state.categories.map(c => `<option value="${c.id}" ${c.id === rec.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+                const { value: formValues } = await Swal.fire({
+                    title: 'Editar Lançamento',
+                    html: `
+                        <input id="r-desc" class="swal2-input" value="${rec.description}">
+                        <input id="r-val" type="number" step="0.01" class="swal2-input" value="${rec.amount}">
+                        <input id="r-day" type="number" min="1" max="31" class="swal2-input" value="${rec.day}">
+                        <select id="r-type" class="swal2-select font-bold">
+                            <option value="expense" ${rec.type === 'expense' ? 'selected' : ''}>Despesa Fixa</option>
+                            <option value="income" ${rec.type === 'income' ? 'selected' : ''}>Receita Fixa</option>
+                        </select>
+                        <select id="r-cat" class="swal2-select">${catOpts}</select>`,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        return {
+                            description: document.getElementById('r-desc').value,
+                            amount: Number(document.getElementById('r-val').value),
+                            day: Number(document.getElementById('r-day').value),
+                            type: document.getElementById('r-type').value,
+                            categoryId: document.getElementById('r-cat').value
+                        }
+                    }
+                });
+                
+                if (formValues && formValues.description && formValues.day && formValues.amount) {
+                    const oldDesc = rec.description;
+                    Object.assign(rec, formValues);
+                    
+                    const now = new Date();
+                    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                    
+                    const generatedTx = this.state.transactions.find(t => 
+                        (t.recurringId === id || (t.isRecurringAuto && t.description === oldDesc)) 
+                        && t.date.startsWith(currentMonthKey)
+                    );
+                    
+                    if (generatedTx) {
+                        generatedTx.recurringId = id; 
+                        generatedTx.description = rec.description;
+                        generatedTx.amount = rec.amount;
+                        generatedTx.type = rec.type;
+                        generatedTx.categoryId = rec.categoryId;
+                        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                        const targetDay = Math.min(rec.day, lastDayOfMonth);
+                        generatedTx.date = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
+                    }
+
+                    this.saveData();
+                    this.renderRecurringList();
+                    this.renderDashboard(); 
+                    if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
+                }
+            },
+
+            deleteRecurring(id) { 
+                const rec = this.state.recurring.find(r => r.id === id);
+                if (!rec) return;
+
+                Swal.fire({
+                    title: 'E o Extrato?',
+                    text: 'Deseja apagar também todos os lançamentos que essa conta já gerou no extrato para recuperar o seu Saldo Livre?',
+                    icon: 'warning',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: 'Sim, limpar tudo',
+                    denyButtonText: 'Não, manter histórico',
+                    cancelButtonText: 'Cancelar',
+                    customClass: {
+                        denyButton: 'swal2-confirm !bg-slate-400' 
+                    }
+                }).then((res) => {
+                    if (res.isConfirmed) {
+                        this.state.transactions = this.state.transactions.filter(t => 
+                            !(t.recurringId === id || (t.isRecurringAuto && t.description === rec.description))
+                        );
+                        this.finishDeleteRecurring(id);
+                    } else if (res.isDenied) {
+                        const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+                        this.state.transactions = this.state.transactions.filter(t => 
+                            !( (t.recurringId === id || (t.isRecurringAuto && t.description === rec.description)) && t.date.startsWith(currentMonthKey) )
+                        );
+                        this.finishDeleteRecurring(id);
+                    }
+                });
+            },
+            
+            finishDeleteRecurring(id) {
+                this.state.recurring = this.state.recurring.filter(r => r.id !== id); 
+                this.saveData(); 
+                this.renderRecurringList(); 
+                this.renderDashboard();
+                if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Conta apagada!', showConfirmButton: false, timer: 1500 });
+            },
+            
             renderRecurringList() {
                 const container = document.getElementById('recurring-container'); container.innerHTML = '';
                 if(this.state.recurring.length === 0){ container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhuma conta fixa.</div>'; return; }
@@ -565,16 +713,18 @@
                         <div class="flex items-center justify-between p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors gap-2 w-full">
                             <div class="flex items-center gap-3 flex-1 min-w-0">
                                 <div class="w-9 h-9 rounded-full bg-indigo-50 dark:bg-slate-700/50 flex items-center justify-center font-black text-indigo-500 flex-shrink-0 text-[10px] border border-slate-200 dark:border-slate-600">D.${String(r.day).padStart(2,'0')}</div>
-                                <span class="font-bold text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${r.description}</span>
+                                <span class="font-bold text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${this.escapeHTML(r.description)}</span>
                             </div>
-                            <div class="flex items-center gap-2 flex-shrink-0">
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
                                 <span class="font-black text-sm ${isInc ? 'text-emerald-500' : 'text-rose-500'} truncate max-w-[80px]">${this.formatCurrency(r.amount)}</span>
+                                <button onclick="app.editRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50 active:scale-95"><i class="ph ph-pencil-simple text-lg"></i></button>
                                 <button onclick="app.deleteRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-transparent active:scale-95"><i class="ph ph-trash text-lg"></i></button>
                             </div>
                         </div>
                     `;
                 });
             },
+            
             exportJSON() { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.state)); const dlAnchorElem = document.createElement('a'); dlAnchorElem.setAttribute("href", dataStr); dlAnchorElem.setAttribute("download", `konta_backup.json`); dlAnchorElem.click(); },
             importJSON(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { try { const parsed = JSON.parse(ev.target.result); if(parsed.transactions) { Object.assign(this.state, parsed); this.saveData(); Swal.fire('Restaurado!', 'O backup foi carregado.', 'success').then(() => location.reload()); } else throw new Error(); } catch (err) { Swal.fire('Ops!', 'O arquivo não é válido.', 'error'); } }; reader.readAsText(file); e.target.value = ''; },
             exportCSV() { let csv = 'Data;Tipo;Categoria;Descricao;Valor\n'; this.state.transactions.forEach(t => { const cat = this.state.categories.find(c => c.id === t.categoryId)?.name || 'Outros'; csv += `${t.date};${t.type};${cat};${t.description};${t.amount}\n`; }); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.setAttribute('href', url); a.setAttribute('download', `konta_planilha.csv`); a.click(); },
