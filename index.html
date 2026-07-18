@@ -42,7 +42,11 @@
         .swal2-input, .swal2-select { 
             border-radius: 9999px !important; padding: 0.8rem 1.5rem !important;
             border: 1px solid #e2e8f0 !important; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05) !important;
-            transition: all 0.2s; font-size: 16px !important; width: 100% !important; box-sizing: border-box !important;
+            transition: all 0.2s; font-size: 16px !important; 
+            width: 100% !important; max-width: 100% !important; 
+            box-sizing: border-box !important;
+            margin-left: 0 !important; margin-right: 0 !important; 
+            margin-top: 15px !important; margin-bottom: 0 !important;
         }
         .swal2-input:focus, .swal2-select:focus { border-color: #4f46e5 !important; outline: none !important; }
         .swal2-confirm, .swal2-cancel, .swal2-deny { border-radius: 9999px !important; padding: 0.85rem 2rem !important; font-weight: 800 !important; width: 100%; margin-top: 10px !important; }
@@ -99,6 +103,9 @@
             </button>
             <button onclick="app.switchTab('goals')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
                 <i class="ph ph-piggy-bank text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Metas</span>
+            </button>
+            <button onclick="app.switchTab('cadastros')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-list-plus text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Cadastros</span>
             </button>
             <button onclick="app.switchTab('settings')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
                 <i class="ph ph-gear text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Ajustes</span>
@@ -212,14 +219,13 @@
             <div class="grid-auto-fit w-full" id="goals-container"></div>
         </section>
 
-        <section id="settings" class="view-section space-y-6 w-full">
+        <section id="cadastros" class="view-section space-y-6 w-full">
             <div>
-                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Ajustes</h2>
-                <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Gerencie tudo.</p>
+                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Cadastros</h2>
+                <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Gerencie categorias e contas fixas.</p>
             </div>
 
             <div class="grid-auto-fit-lg w-full">
-                
                 <div class="card space-y-6 w-full md:col-span-2">
                     <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                         <div class="flex items-center gap-3 min-w-0 w-full">
@@ -243,7 +249,16 @@
                         <div id="recurring-container" class="divide-y divide-slate-100 dark:divide-slate-700/50"></div>
                     </div>
                 </div>
+            </div>
+        </section>
 
+        <section id="settings" class="view-section space-y-6 w-full">
+            <div>
+                <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Ajustes</h2>
+                <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Gerencie o sistema.</p>
+            </div>
+
+            <div class="grid-auto-fit-lg w-full">
                 <div class="card space-y-6 w-full">
                     <div class="flex items-center gap-3 min-w-0">
                         <div class="p-2.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-full text-primary flex-shrink-0"><i class="ph ph-database text-2xl"></i></div>
@@ -342,8 +357,11 @@
                 document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
                 document.querySelectorAll('.nav-btn').forEach(el => { el.classList.remove('text-primary', 'bg-indigo-50', 'dark:bg-indigo-900/30', 'font-black'); if (el.getAttribute('onclick').includes(tabId)) el.classList.add('text-primary', 'bg-indigo-50', 'dark:bg-indigo-900/30', 'font-black'); });
                 document.getElementById(tabId).classList.add('active');
-                if(tabId === 'dashboard') this.renderDashboard(); if(tabId === 'transactions') this.renderTransactions();
-                if(tabId === 'debts') this.renderDebts(); if(tabId === 'goals') this.renderGoals(); if(tabId === 'settings') { this.renderCategories(); this.renderRecurringList(); }
+                if(tabId === 'dashboard') this.renderDashboard(); 
+                if(tabId === 'transactions') this.renderTransactions();
+                if(tabId === 'debts') this.renderDebts(); 
+                if(tabId === 'goals') this.renderGoals(); 
+                if(tabId === 'cadastros') { this.renderCategories(); this.renderRecurringList(); }
             },
 
             setDefaultsDates() {
