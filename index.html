@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>konta</title>
     
+    <!-- Link para o Manifest (necessário para instalar e funcionar offline) -->
+    <link rel="manifest" href="manifest.json">
+    
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -751,6 +754,21 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => { app.init(); });
+    </script>
+
+    <!-- Script de Registro do Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(registration => {
+                        console.log('Modo Offline ativado com sucesso!', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Falha ao ativar o modo offline:', error);
+                    });
+            });
+        }
     </script>
 </body>
 </html>

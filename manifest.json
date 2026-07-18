@@ -1,0 +1,20 @@
+{
+  "name": "konta",
+  "short_name": "konta",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#090e1a",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "cat.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "cat.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
