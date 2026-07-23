@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>konta</title>
     
-    <!-- Link para o Manifest (necessário para instalar e funcionar offline) -->
     <link rel="manifest" href="manifest.json">
     
     <meta name="mobile-web-app-capable" content="yes">
@@ -98,6 +97,9 @@
             <button onclick="app.switchTab('dashboard')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full active transition-colors">
                 <i class="ph ph-squares-four text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Resumo</span>
             </button>
+            <button onclick="app.switchTab('cards')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
+                <i class="ph ph-credit-card text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Cartões</span>
+            </button>
             <button onclick="app.switchTab('transactions')" class="nav-btn flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 w-full transition-colors">
                 <i class="ph ph-list-dashes text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Extrato</span>
             </button>
@@ -169,6 +171,12 @@
                     <h4 class="font-black w-full text-left mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Por Categoria</h4>
                     <div class="relative w-full max-w-[200px] aspect-square"><canvas id="expenseChart"></canvas></div>
                 </div>
+
+                <div class="card flex flex-col items-center justify-center min-h-[280px]">
+                    <h4 class="font-black w-full text-left mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Previsão (Falta Pagar)</h4>
+                    <div class="relative w-full h-[200px]"><canvas id="forecastChart"></canvas></div>
+                </div>
+
                 <div class="flex flex-col gap-6 md:col-span-2">
                     <div class="card w-full">
                         <h4 class="font-black mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Orçamento Mensal</h4>
@@ -182,6 +190,17 @@
             </div>
         </section>
 
+        <section id="cards" class="view-section space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Cartões</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Gerencie seus cartões de crédito.</p>
+                </div>
+                <button onclick="app.newCard()" class="btn-primary sm:w-auto"><i class="ph ph-plus-circle text-xl mr-2"></i> Novo Cartão</button>
+            </div>
+            <div class="grid-auto-fit-lg w-full" id="cards-container"></div>
+        </section>
+
         <section id="transactions" class="view-section space-y-6 w-full">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div class="w-full sm:w-auto">
@@ -192,9 +211,19 @@
             </div>
 
             <div class="card p-0 overflow-hidden border border-slate-100 dark:border-slate-700/60 shadow-lg">
-                <div class="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/80">
-                    <h3 class="font-black text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Extrato do Mês</h3>
-                    <input type="month" id="list-month-filter" class="date-pill" onchange="app.renderTransactions()">
+                <div class="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700/60 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/80">
+                    <h3 class="font-black text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Extrato</h3>
+                    <div class="flex flex-wrap gap-3 w-full xl:w-auto items-center">
+                        <input type="text" id="list-search" class="date-pill !px-4 !py-2.5 flex-1 xl:w-40 !font-normal" placeholder="Buscar texto..." oninput="app.renderTransactions()">
+                        <select id="list-cat-filter" class="date-pill !px-4 !py-2.5 flex-1 xl:w-40 !font-normal" onchange="app.renderTransactions()">
+                            <option value="">Todas Categorias</option>
+                        </select>
+                        <input type="month" id="list-month-filter" class="date-pill !px-4 !py-2.5 flex-1 xl:w-40" onchange="app.renderTransactions()">
+                        <label class="flex items-center gap-2 text-sm font-bold text-slate-500 cursor-pointer pl-1 w-full sm:w-auto">
+                            <input type="checkbox" id="list-hide-paid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="app.renderTransactions()">
+                            Ocultar Pagas
+                        </label>
+                    </div>
                 </div>
                 <div id="tx-table-body" class="divide-y divide-slate-100 dark:divide-slate-700/50"></div>
             </div>
@@ -204,7 +233,7 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div class="w-full sm:w-auto">
                     <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Caderninho</h2>
-                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle dívidas.</p>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle dívidas informais.</p>
                 </div>
                 <button onclick="app.newDebt()" class="btn-primary sm:w-auto"><i class="ph ph-notebook text-xl mr-2"></i> Nova Dívida</button>
             </div>
@@ -311,14 +340,29 @@
             app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
                 select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
             });
+            
+            const expenseOptions = document.getElementById('tx-expense-options');
+            if (expenseOptions) {
+                expenseOptions.style.display = type === 'expense' ? 'block' : 'none';
+            }
+        };
+        
+        window.updateEditSwalCat = function() {
+            const type = document.getElementById('swal-tx-type').value;
+            const select = document.getElementById('swal-tx-cat');
+            select.innerHTML = '';
+            app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
+                select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
+            });
         };
 
         const app = {
-            state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], theme: 'light' },
+            state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], cards: [], theme: 'light' },
             chartInstance: null,
+            forecastChartInstance: null,
 
             init() {
-                this.loadData(); this.applyTheme(); this.setDefaultsDates(); this.processRecurring(); this.updateStatusIcon();
+                this.loadData(); this.applyTheme(); this.populateCatFilter(); this.setDefaultsDates(); this.processRecurring(); this.updateStatusIcon();
                 const initialTab = location.hash.replace('#', '') || 'dashboard'; this.switchTab(initialTab);
             },
             
@@ -331,29 +375,51 @@
                 const parse = (key, def) => JSON.parse(localStorage.getItem(`gf_${key}`)) || def;
                 this.state.transactions = parse('transactions', []); this.state.categories = parse('categories', defaultCategories);
                 this.state.recurring = parse('recurring', []); this.state.debts = parse('debts', []);
-                this.state.goals = parse('goals', []); this.state.theme = localStorage.getItem('gf_theme') || 'light';
+                this.state.goals = parse('goals', []); this.state.cards = parse('cards', []); this.state.theme = localStorage.getItem('gf_theme') || 'light';
+                
+                this.state.transactions.forEach(t => {
+                    if (!t.debtId && t.description.startsWith('Pag. Dívida: ')) {
+                        const debtTitle = t.description.replace('Pag. Dívida: ', '');
+                        const debt = this.state.debts.find(d => d.title === debtTitle);
+                        if (debt) t.debtId = debt.id;
+                    }
+                    if (t.isPaid === undefined) {
+                        t.isPaid = false;
+                    }
+                });
+
+                this.state.goals.forEach(g => {
+                    if (g.appSavedAmount === undefined) {
+                        g.appSavedAmount = g.savedAmount; 
+                    }
+                });
             },
             saveData() {
                 localStorage.setItem('gf_transactions', JSON.stringify(this.state.transactions)); localStorage.setItem('gf_categories', JSON.stringify(this.state.categories));
                 localStorage.setItem('gf_recurring', JSON.stringify(this.state.recurring)); localStorage.setItem('gf_debts', JSON.stringify(this.state.debts));
-                localStorage.setItem('gf_goals', JSON.stringify(this.state.goals)); localStorage.setItem('gf_theme', this.state.theme);
+                localStorage.setItem('gf_goals', JSON.stringify(this.state.goals)); localStorage.setItem('gf_cards', JSON.stringify(this.state.cards)); localStorage.setItem('gf_theme', this.state.theme);
                 this.updateStatusIcon();
             },
             generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2); },
             formatCurrency(val) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val); },
             
             updateStatusIcon() {
-                const totalIncomeAll = this.state.transactions.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
-                const totalExpenseAll = this.state.transactions.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
-                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.savedAmount), 0);
-                const balance = totalIncomeAll - totalExpenseAll - totalGoalsSaved;
+                const d = new Date();
+                const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const validTx = this.state.transactions.filter(t => t.date.slice(0, 7) <= nowMonth);
+                
+                const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
+                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.appSavedAmount !== undefined ? b.appSavedAmount : b.savedAmount), 0);
+                
+                const balance = cashIncome - cashExpense - totalGoalsSaved;
                 const iconUrl = balance >= 0 ? '1.png' : '2.png';
                 
                 const sidebarLogo = document.getElementById('sidebar-logo'); if(sidebarLogo) sidebarLogo.src = iconUrl;
                 const mobileLogo = document.getElementById('mobile-logo'); if(mobileLogo) mobileLogo.src = iconUrl;
             },
 
-            toggleTheme() { this.state.theme = this.state.theme === 'light' ? 'dark' : 'light'; this.applyTheme(); this.saveData(); if(this.chartInstance) this.renderChart(); },
+            toggleTheme() { this.state.theme = this.state.theme === 'light' ? 'dark' : 'light'; this.applyTheme(); this.saveData(); if(this.chartInstance) { this.renderChart(); this.renderForecastChart(); } },
             applyTheme() { document.documentElement.className = this.state.theme; },
 
             switchTab(tabId) {
@@ -364,7 +430,19 @@
                 if(tabId === 'transactions') this.renderTransactions();
                 if(tabId === 'debts') this.renderDebts(); 
                 if(tabId === 'goals') this.renderGoals(); 
+                if(tabId === 'cards') this.renderCards();
                 if(tabId === 'cadastros') { this.renderCategories(); this.renderRecurringList(); }
+            },
+
+            populateCatFilter() {
+                const select = document.getElementById('list-cat-filter');
+                if (!select) return;
+                const currentVal = select.value;
+                select.innerHTML = '<option value="">Todas Categorias</option>';
+                this.state.categories.forEach(c => {
+                    select.innerHTML += `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`;
+                });
+                select.value = currentVal;
             },
 
             setDefaultsDates() {
@@ -391,7 +469,8 @@
                             date: `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`, 
                             type: rec.type, 
                             categoryId: rec.categoryId, 
-                            isRecurringAuto: true 
+                            isRecurringAuto: true,
+                            isPaid: false
                         });
                         rec.lastProcessedMonth = currentMonthKey; added = true;
                     }
@@ -401,13 +480,16 @@
 
             renderDashboard() {
                 const filter = document.getElementById('dash-month-filter').value; if(!filter) return;
-                const totalIncomeAll = this.state.transactions.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
-                const totalExpenseAll = this.state.transactions.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
-                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.savedAmount), 0);
-                const balance = totalIncomeAll - totalExpenseAll - totalGoalsSaved;
+                
+                const validTx = this.state.transactions.filter(t => t.date.slice(0, 7) <= filter);
+                
+                const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
+                const totalGoalsSaved = this.state.goals.reduce((a,b) => a + Number(b.appSavedAmount !== undefined ? b.appSavedAmount : b.savedAmount), 0);
+                const balance = cashIncome - cashExpense - totalGoalsSaved;
                 document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
 
-                const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter));
+                const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type !== 'cc_payment');
                 const monthIncome = monthTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
                 const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
                 document.getElementById('dash-income').innerText = this.formatCurrency(monthIncome); document.getElementById('dash-expense').innerText = this.formatCurrency(monthExpense);
@@ -448,11 +530,12 @@
                 }
 
                 this.renderChart(expensesByCat);
+                this.renderForecastChart();
             },
 
             renderChart(expensesByCat = null) {
                 if(!expensesByCat) {
-                    const filter = document.getElementById('dash-month-filter').value; const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type === 'expense');
+                    const filter = document.getElementById('dash-month-filter').value; const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type === 'expense' && t.type !== 'cc_payment');
                     expensesByCat = {}; monthTx.forEach(t => expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount));
                 }
                 const ctx = document.getElementById('expenseChart').getContext('2d'); if (this.chartInstance) this.chartInstance.destroy();
@@ -463,41 +546,747 @@
                 this.chartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, borderRadius: 20 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark ? '#1e293b' : '#ffffff', titleColor: isDark ? '#f8fafc' : '#0f172a', bodyColor: isDark ? '#cbd5e1' : '#475569', padding: 12, cornerRadius: 16, displayColors: false, callbacks: { label: (ctx) => data[0] === 1 && labels[0]==='Sem despesas' ? '' : this.formatCurrency(ctx.raw) } } } } });
             },
 
+            renderForecastChart() {
+                const ctx = document.getElementById('forecastChart').getContext('2d');
+                if (this.forecastChartInstance) this.forecastChartInstance.destroy();
+
+                const labels = [];
+                const data = [];
+                const now = new Date();
+                
+                for (let i = 0; i < 4; i++) {
+                    const futureDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                    const monthKey = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}`;
+                    const monthName = futureDate.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
+                    labels.push(monthName);
+
+                    const txSum = this.state.transactions
+                        .filter(t => t.date.startsWith(monthKey) && t.type === 'expense' && t.type !== 'cc_payment' && !t.isPaid)
+                        .reduce((acc, t) => acc + Number(t.amount), 0);
+                    
+                    const recSum = this.state.recurring
+                        .filter(r => r.type === 'expense')
+                        .reduce((acc, r) => {
+                            const alreadyGenerated = this.state.transactions.some(t => t.recurringId === r.id && t.date.startsWith(monthKey));
+                            const processedButDeleted = r.lastProcessedMonth && (r.lastProcessedMonth >= monthKey) && !alreadyGenerated;
+                            
+                            if (alreadyGenerated || processedButDeleted) return acc;
+                            return acc + Number(r.amount);
+                        }, 0);
+
+                    data.push(txSum + recSum);
+                }
+
+                const isDark = this.state.theme === 'dark';
+                this.forecastChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Falta Pagar',
+                            data: data,
+                            backgroundColor: '#ef4444',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                                titleColor: isDark ? '#f8fafc' : '#0f172a',
+                                bodyColor: isDark ? '#cbd5e1' : '#475569',
+                                displayColors: false,
+                                callbacks: { label: (ctx) => this.formatCurrency(ctx.raw) }
+                            }
+                        },
+                        scales: {
+                            y: { display: false, beginAtZero: true },
+                            x: { grid: { display: false }, ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { weight: 'bold' } } }
+                        }
+                    }
+                });
+            },
+
+            async newCard() {
+                const { value: formValues } = await Swal.fire({
+                    title: 'Novo Cartão',
+                    html: `
+                        <input id="card-name" class="swal2-input" placeholder="Nome (ex: Nubank)">
+                        <input id="card-limit" type="number" step="0.01" class="swal2-input" placeholder="Limite (R$)">
+                        <input id="card-close" type="number" min="1" max="31" class="swal2-input" placeholder="Dia do Fechamento">
+                        <input id="card-due" type="number" min="1" max="31" class="swal2-input" placeholder="Dia do Vencimento">
+                        <div class="mt-4 text-left px-3 text-sm font-bold text-slate-500">Cor do Cartão</div>
+                        <input id="card-color" type="color" class="swal2-input !h-14 !p-1 cursor-pointer" value="#8b5cf6">
+                    `,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        return {
+                            name: document.getElementById('card-name').value,
+                            limit: Number(document.getElementById('card-limit').value),
+                            closingDay: Number(document.getElementById('card-close').value),
+                            dueDay: Number(document.getElementById('card-due').value),
+                            color: document.getElementById('card-color').value
+                        }
+                    }
+                });
+                if (formValues && formValues.name && formValues.limit) {
+                    this.state.cards.push({ id: this.generateId(), ...formValues });
+                    this.saveData(); this.renderCards();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Cartão Adicionado!', showConfirmButton: false, timer: 1500 });
+                }
+            },
+
+            async editCard(id) {
+                const card = this.state.cards.find(c => c.id === id); if(!card) return;
+                const { value: formValues } = await Swal.fire({
+                    title: 'Editar Cartão',
+                    html: `
+                        <input id="card-name" class="swal2-input" placeholder="Nome" value="${this.escapeHTML(card.name)}">
+                        <input id="card-limit" type="number" step="0.01" class="swal2-input" placeholder="Limite (R$)" value="${card.limit}">
+                        <input id="card-close" type="number" min="1" max="31" class="swal2-input" placeholder="Dia do Fechamento" value="${card.closingDay}">
+                        <input id="card-due" type="number" min="1" max="31" class="swal2-input" placeholder="Dia do Vencimento" value="${card.dueDay}">
+                        <div class="mt-4 text-left px-3 text-sm font-bold text-slate-500">Cor do Cartão</div>
+                        <input id="card-color" type="color" class="swal2-input !h-14 !p-1 cursor-pointer" value="${card.color}">
+                    `,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        return {
+                            name: document.getElementById('card-name').value,
+                            limit: Number(document.getElementById('card-limit').value),
+                            closingDay: Number(document.getElementById('card-close').value),
+                            dueDay: Number(document.getElementById('card-due').value),
+                            color: document.getElementById('card-color').value
+                        }
+                    }
+                });
+                if (formValues && formValues.name && formValues.limit) {
+                    card.name = formValues.name; card.limit = formValues.limit; card.closingDay = formValues.closingDay; card.dueDay = formValues.dueDay; card.color = formValues.color;
+                    this.saveData(); this.renderCards();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
+                }
+            },
+
+            deleteCard(id) {
+                if(this.state.transactions.some(t => t.cardId === id)) { Swal.fire('Aviso', 'Exclua as transações desse cartão primeiro.', 'error'); return; }
+                Swal.fire({ title: 'Apagar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => {
+                    if(res.isConfirmed) {
+                        this.state.cards = this.state.cards.filter(c => c.id !== id);
+                        this.saveData(); this.renderCards();
+                    }
+                });
+            },
+
+            async payInvoice(cardId, invoiceMonth) {
+                const card = this.state.cards.find(c => c.id === cardId);
+                const cardTxs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid);
+                const total = cardTxs.reduce((a,b) => a + Number(b.amount), 0);
+
+                const { value: amount } = await Swal.fire({
+                    title: `Pagar Fatura`,
+                    html: `
+                        <p class="text-slate-700 dark:text-slate-200 mb-4 text-sm">Fatura de <b>${invoiceMonth.split('-').reverse().join('/')}</b><br>Total aberto: <b class="text-rose-500">${this.formatCurrency(total)}</b></p>
+                        <div class="text-left px-4">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Valor do Pagamento (R$):</label>
+                            <input id="swal-inv-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${total}">
+                            <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Dica: Se pagar menos que o total, o restante será jogado para a próxima fatura.</p>
+                        </div>
+                    `,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sim, Pagar',
+                    cancelButtonText: 'Cancelar',
+                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500' },
+                    preConfirm: () => Number(document.getElementById('swal-inv-val').value)
+                });
+
+                if (amount) {
+                    if (amount > total) { Swal.fire('Erro', 'Você não pode pagar mais do que o valor da fatura.', 'error'); return; }
+
+                    const paymentId = this.generateId();
+
+                    this.state.transactions.push({
+                        id: paymentId,
+                        description: `Pagamento Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})${amount < total ? ' - Parcial' : ''}`,
+                        amount: amount,
+                        date: new Date().toISOString().split('T')[0],
+                        type: 'cc_payment',
+                        paidCardId: cardId,
+                        paidInvoiceMonth: invoiceMonth,
+                        isPaid: true
+                    });
+
+                    cardTxs.forEach(t => t.isPaid = true);
+
+                    // Lógica para jogar o restante para o mês que vem
+                    if (amount < total) {
+                        const remaining = total - amount;
+                        let [y, m] = invoiceMonth.split('-');
+                        let nm = parseInt(m) + 1; let ny = parseInt(y);
+                        if (nm > 12) { nm = 1; ny++; }
+                        const nextInvoiceMonth = `${ny}-${String(nm).padStart(2, '0')}`;
+                        
+                        let cat = this.state.categories.find(c => c.name === 'Restante de Fatura');
+                        if(!cat) {
+                            cat = { id: this.generateId(), name: 'Restante de Fatura', icon: '💳', type: 'expense', budgetLimit: 0 };
+                            this.state.categories.push(cat);
+                        }
+
+                        this.state.transactions.push({
+                            id: this.generateId(),
+                            parentPaymentId: paymentId, // Vincula para poder apagar junto se desfizer
+                            description: `Restante Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})`,
+                            amount: remaining,
+                            date: new Date().toISOString().split('T')[0],
+                            type: 'expense',
+                            categoryId: cat.id,
+                            isPaid: false,
+                            cardId: cardId,
+                            invoiceMonth: nextInvoiceMonth
+                        });
+                    }
+
+                    this.saveData(); this.renderCards();
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Fatura Paga!', showConfirmButton: false, timer: 1500 });
+                }
+            },
+
+            renderCards() {
+                const container = document.getElementById('cards-container');
+                if(!container) return;
+                container.innerHTML = '';
+                if (this.state.cards.length === 0) {
+                    container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full md:col-span-2">Nenhum cartão cadastrado.</div>';
+                    return;
+                }
+
+                this.state.cards.forEach(card => {
+                    const cardTxs = this.state.transactions.filter(t => t.cardId === card.id && !t.isPaid);
+                    const totalUsed = cardTxs.reduce((a,b) => a + Number(b.amount), 0);
+                    const available = card.limit - totalUsed;
+                    const pct = Math.min(100, (totalUsed / card.limit) * 100);
+
+                    const invoices = {};
+                    cardTxs.forEach(t => {
+                        invoices[t.invoiceMonth] = (invoices[t.invoiceMonth] || 0) + Number(t.amount);
+                    });
+
+                    const invoiceMonths = Object.keys(invoices).sort();
+                    let currentInvoiceHtml = '<p class="text-sm font-bold text-slate-500 mt-4 text-center bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">Fatura zerada 🎉</p>';
+                    
+                    if (invoiceMonths.length > 0) {
+                        const earliestMonth = invoiceMonths[0]; 
+                        const [y, m] = earliestMonth.split('-');
+                        currentInvoiceHtml = `
+                            <div class="mt-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+                                <div class="flex justify-between items-center mb-3">
+                                    <span class="font-bold text-slate-600 dark:text-slate-300 text-sm">Fatura ${m}/${y}</span>
+                                    <span class="font-black text-rose-500 text-lg">${this.formatCurrency(invoices[earliestMonth])}</span>
+                                </div>
+                                <button onclick="app.payInvoice('${card.id}', '${earliestMonth}')" class="btn-primary !w-full !py-2.5 !text-sm bg-slate-800 dark:bg-indigo-600 hover:bg-slate-900 text-white">Pagar Fatura</button>
+                            </div>
+                        `;
+                    }
+
+                    container.innerHTML += `
+                        <div class="card p-6 flex flex-col gap-1 relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-full h-2" style="background-color: ${card.color}"></div>
+                            <div class="flex justify-between items-start mb-2">
+                                <h3 class="font-black text-xl flex items-center gap-2 text-slate-800 dark:text-white truncate pr-2"><i class="ph ph-credit-card" style="color: ${card.color}"></i> ${this.escapeHTML(card.name)}</h3>
+                                <div class="flex gap-1.5 flex-shrink-0">
+                                    <button onclick="app.editCard('${card.id}')" class="text-slate-400 hover:text-indigo-500 bg-slate-50 dark:bg-slate-900/50 w-8 h-8 rounded-full flex items-center justify-center"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                    <button onclick="app.deleteCard('${card.id}')" class="text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 w-8 h-8 rounded-full flex items-center justify-center"><i class="ph ph-trash text-lg"></i></button>
+                                </div>
+                            </div>
+                            <div class="flex justify-between text-xs text-slate-500 font-bold mb-4">
+                                <span>Fecha dia: ${card.closingDay}</span>
+                                <span>Vence dia: ${card.dueDay}</span>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-sm mb-1 mt-2">
+                                    <span class="text-slate-500 font-bold">Limite Disponível</span>
+                                    <span class="font-black text-emerald-500">${this.formatCurrency(available)}</span>
+                                </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5">
+                                    <div class="h-2 rounded-full transition-all" style="width: ${pct}%; background-color: ${card.color}"></div>
+                                </div>
+                                <div class="text-xs text-slate-400 font-bold mt-1.5 text-right">Usado: <span class="text-slate-600 dark:text-slate-300">${this.formatCurrency(totalUsed)}</span> de ${this.formatCurrency(card.limit)}</div>
+                            </div>
+                            ${currentInvoiceHtml}
+                        </div>
+                    `;
+                });
+            },
+
             async newTransaction() {
                 const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+                const cardOpts = this.state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
                 const today = new Date().toISOString().split('T')[0];
                 const { value: formValues } = await Swal.fire({
                     title: 'Nova Transação',
-                    html: `<input id="tx-desc" class="swal2-input" placeholder="O que foi?"><input id="tx-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)"><input id="tx-date" type="date" class="swal2-input" value="${today}"><select id="tx-type" class="swal2-select font-bold" onchange="window.updateSwalCat()"><option value="expense">Despesa (Saída)</option><option value="income">Receita (Entrada)</option></select><select id="tx-cat" class="swal2-select">${catOpts('expense')}</select>`,
+                    html: `
+                        <input id="tx-desc" class="swal2-input" placeholder="O que foi?">
+                        <input id="tx-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)">
+                        <input id="tx-date" type="date" class="swal2-input" value="${today}">
+                        <select id="tx-type" class="swal2-select font-bold" onchange="window.updateSwalCat()">
+                            <option value="expense">Despesa (Saída)</option>
+                            <option value="income">Receita (Entrada)</option>
+                        </select>
+                        <select id="tx-cat" class="swal2-select">${catOpts('expense')}</select>
+                        
+                        <div id="tx-expense-options" style="display: block;">
+                            <div class="mt-5 text-left px-2 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                ${this.state.cards.length > 0 ? `
+                                    <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-3">
+                                        <input type="checkbox" id="tx-is-cc" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="document.getElementById('tx-cc-container').classList.toggle('hidden')">
+                                        Pago no Cartão de Crédito?
+                                    </label>
+                                    <div id="tx-cc-container" class="hidden mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
+                                        <select id="tx-card-id" class="swal2-select !mt-0 !text-sm !py-2">${cardOpts}</select>
+                                    </div>
+                                ` : ''}
+
+                                <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                    <input type="checkbox" id="tx-is-installment" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="document.getElementById('tx-installments-container').classList.toggle('hidden')">
+                                    É uma compra parcelada?
+                                </label>
+                                
+                                <div id="tx-installments-container" class="hidden mt-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+                                    <label class="block text-xs font-bold text-slate-500 mb-1">O valor informado acima é o:</label>
+                                    <select id="tx-installment-mode" class="swal2-select !mt-0 !mb-3 !text-sm !py-2">
+                                        <option value="total">VALOR TOTAL (ex: R$100 em 10x de R$10)</option>
+                                        <option value="parcela">VALOR DA PARCELA (ex: 10x de R$100 = R$1000)</option>
+                                    </select>
+                                    <input id="tx-installments-count" type="number" min="2" max="72" class="swal2-input !mt-0 !text-sm" placeholder="Nº de Parcelas (ex: 12)">
+                                </div>
+                            </div>
+                        </div>
+                    `,
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
                     preConfirm: () => {
                         const desc = document.getElementById('tx-desc').value; const val = document.getElementById('tx-val').value;
                         const date = document.getElementById('tx-date').value; const type = document.getElementById('tx-type').value; const cat = document.getElementById('tx-cat').value;
-                        if (!desc || !val || !date || !cat) { Swal.showValidationMessage('Preencha os campos!'); return false; }
-                        return { desc, val, date, type, cat };
+                        
+                        let isInstallment = false;
+                        let instMode = null;
+                        let instCount = null;
+                        let isCC = false;
+                        let cardId = null;
+
+                        if (type === 'expense') {
+                            isInstallment = document.getElementById('tx-is-installment').checked;
+                            instMode = document.getElementById('tx-installment-mode').value;
+                            instCount = document.getElementById('tx-installments-count').value;
+                            isCC = document.getElementById('tx-is-cc') ? document.getElementById('tx-is-cc').checked : false;
+                            cardId = document.getElementById('tx-card-id') ? document.getElementById('tx-card-id').value : null;
+                        }
+
+                        if (!desc || !val || !date || !cat) { Swal.showValidationMessage('Preencha os campos obrigatórios!'); return false; }
+                        if (isInstallment && (!instCount || instCount < 2)) { Swal.showValidationMessage('Insira um número válido de parcelas (mínimo 2)!'); return false; }
+                        
+                        return { desc, val, date, type, cat, isInstallment, instMode, instCount: Number(instCount), isCC, cardId };
                     }
                 });
-                if (formValues) { this.state.transactions.push({ id: this.generateId(), description: formValues.desc, amount: Number(formValues.val), date: formValues.date, type: formValues.type, categoryId: formValues.cat }); this.saveData(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Salvo!', showConfirmButton: false, timer: 1500 }); this.renderTransactions(); }
+
+                if (formValues) { 
+                    const getInvoiceMonth = (y, mNum, dNum, cDay) => {
+                        let tm = mNum; let ty = y;
+                        if (dNum >= cDay) { tm++; if(tm > 12) { tm = 1; ty++; } }
+                        return `${ty}-${String(tm).padStart(2, '0')}`;
+                    };
+
+                    const card = (formValues.isCC && formValues.cardId) ? this.state.cards.find(c => c.id === formValues.cardId) : null;
+
+                    if (formValues.isInstallment) {
+                        let amountPerInst = Number(formValues.val);
+                        if (formValues.instMode === 'total') { amountPerInst = Number(formValues.val) / formValues.instCount; }
+                        
+                        const [y, m, d] = formValues.date.split('-');
+                        let currYear = parseInt(y); let currMonth = parseInt(m); const currDay = parseInt(d);
+                        
+                        const groupId = this.generateId();
+
+                        for (let i = 1; i <= formValues.instCount; i++) {
+                            const lastDayOfMonth = new Date(currYear, currMonth, 0).getDate();
+                            const targetDay = Math.min(currDay, lastDayOfMonth);
+                            const dateStr = `${currYear}-${String(currMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+                            
+                            let invMonth = null;
+                            if (card) invMonth = getInvoiceMonth(currYear, currMonth, targetDay, card.closingDay);
+
+                            this.state.transactions.push({
+                                id: this.generateId(),
+                                installmentGroupId: groupId,
+                                description: `${formValues.desc} (${i}/${formValues.instCount})`,
+                                amount: amountPerInst,
+                                date: dateStr,
+                                type: formValues.type,
+                                categoryId: formValues.cat,
+                                isPaid: false,
+                                cardId: card ? card.id : null,
+                                invoiceMonth: invMonth
+                            });
+                            
+                            currMonth++; if(currMonth > 12) { currMonth = 1; currYear++; }
+                        }
+                    } else {
+                        let invMonth = null;
+                        const [y, m, d] = formValues.date.split('-');
+                        if (card) invMonth = getInvoiceMonth(parseInt(y), parseInt(m), parseInt(d), card.closingDay);
+
+                        this.state.transactions.push({ 
+                            id: this.generateId(), description: formValues.desc, amount: Number(formValues.val), date: formValues.date, 
+                            type: formValues.type, categoryId: formValues.cat, isPaid: false, cardId: card ? card.id : null, invoiceMonth: invMonth 
+                        }); 
+                    }
+
+                    this.saveData(); 
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Salvo!', showConfirmButton: false, timer: 1500 }); 
+                    this.renderTransactions(); 
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                    if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                }
             },
-            deleteTransaction(id) { Swal.fire({ title: 'Excluir?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if (res.isConfirmed) { this.state.transactions = this.state.transactions.filter(t => t.id !== id); this.saveData(); this.renderTransactions(); } }); },
+            
+            async togglePaid(id) {
+                const tx = this.state.transactions.find(t => t.id === id);
+                if (!tx) return;
+
+                if (tx.type === 'cc_payment') {
+                    Swal.fire({
+                        title: 'Desfazer Pagamento?',
+                        text: 'Deseja cancelar o pagamento desta fatura? As compras do cartão voltarão a ficar em aberto.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sim, desfazer',
+                        cancelButtonText: 'Cancelar'
+                    }).then((res) => {
+                        if (res.isConfirmed) this.executeDeleteTx(id);
+                    });
+                    return;
+                }
+
+                if (tx.isPaid) {
+                    tx.isPaid = false;
+                    this.saveData(); this.renderTransactions();
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                    if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                } else {
+                    const { value: amount } = await Swal.fire({
+                        title: 'Confirmar Pagamento',
+                        html: `
+                            <p class="mb-4 text-sm text-slate-700 dark:text-slate-200">Valor total do item: <b>${this.formatCurrency(tx.amount)}</b></p>
+                            <div class="text-left px-4">
+                                <label class="block text-xs font-bold text-slate-500 mb-1">Valor que você pagou agora (R$):</label>
+                                <input id="swal-tx-pay-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${tx.amount}">
+                                <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Dica: Se pagar menos que o total, o sistema vai dividir esta conta em duas (uma quitada e outra com o restante a pagar).</p>
+                            </div>
+                        `,
+                        showCancelButton: true,
+                        confirmButtonText: 'Confirmar',
+                        cancelButtonText: 'Cancelar',
+                        preConfirm: () => Number(document.getElementById('swal-tx-pay-val').value)
+                    });
+
+                    if (amount) {
+                        if (amount > tx.amount) {
+                            Swal.fire('Erro', 'O valor pago não pode ser maior que o total da transação.', 'error');
+                            return;
+                        }
+                        
+                        if (amount === tx.amount) {
+                            tx.isPaid = true;
+                        } else if (amount > 0 && amount < tx.amount) {
+                            const remaining = tx.amount - amount;
+                            const newTx = { 
+                                ...tx, 
+                                id: this.generateId(), 
+                                amount: remaining, 
+                                isPaid: false 
+                            };
+                            
+                            tx.amount = amount;
+                            tx.isPaid = true;
+                            tx.description += ' (Parcial)';
+                            newTx.description += ' (Restante)';
+                            
+                            this.state.transactions.push(newTx);
+                        }
+                        
+                        this.saveData(); this.renderTransactions();
+                        if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                        if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                    }
+                }
+            },
+
+            async editTransaction(id) {
+                const tx = this.state.transactions.find(t => t.id === id);
+                if (!tx) return;
+
+                if (tx.type === 'cc_payment') {
+                    Swal.fire({
+                        title: 'Pagamento de Fatura',
+                        text: 'Esta é uma transação gerada automaticamente. Para corrigir o valor ou cancelar, desfaça o pagamento (clicando na lixeira ou no botão de check ✅ no extrato) e pague novamente na aba Cartões.',
+                        icon: 'info',
+                        confirmButtonText: 'Entendi'
+                    });
+                    return;
+                }
+
+                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === tx.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+                
+                let cleanDesc = tx.description;
+                if (tx.installmentGroupId) cleanDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '');
+                
+                const isCCExpense = tx.cardId && tx.type !== 'cc_payment';
+                const isPaidHtml = !isCCExpense ? `
+                    <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                            <input type="checkbox" id="swal-tx-ispaid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" ${tx.isPaid ? 'checked' : ''}>
+                            Marcar como Paga
+                        </label>
+                    </div>
+                ` : `
+                    <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <p class="text-xs font-bold text-slate-500"><i class="ph ph-lock mr-1"></i> O status de pagamento desta compra está vinculado à fatura do cartão.</p>
+                    </div>
+                `;
+                
+                const { value: formValues } = await Swal.fire({
+                    title: 'Editar Transação',
+                    html: `
+                        <input id="swal-tx-desc" class="swal2-input" placeholder="Descrição" value="${this.escapeHTML(cleanDesc)}">
+                        <input id="swal-tx-val" type="number" step="0.01" class="swal2-input" placeholder="Valor" value="${tx.amount}">
+                        <input id="swal-tx-date" type="date" class="swal2-input" value="${tx.date}">
+                        <select id="swal-tx-type" class="swal2-select font-bold" onchange="window.updateEditSwalCat()">
+                            <option value="expense" ${tx.type === 'expense' ? 'selected' : ''}>Despesa (Saída)</option>
+                            <option value="income" ${tx.type === 'income' ? 'selected' : ''}>Receita (Entrada)</option>
+                        </select>
+                        <select id="swal-tx-cat" class="swal2-select">${catOpts(tx.type)}</select>
+                        ${isPaidHtml}
+                    `,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        const isPaidEl = document.getElementById('swal-tx-ispaid');
+                        return {
+                            desc: document.getElementById('swal-tx-desc').value,
+                            val: Number(document.getElementById('swal-tx-val').value),
+                            date: document.getElementById('swal-tx-date').value,
+                            type: document.getElementById('swal-tx-type').value,
+                            cat: document.getElementById('swal-tx-cat').value,
+                            isPaid: isPaidEl ? isPaidEl.checked : tx.isPaid
+                        }
+                    }
+                });
+
+                if (formValues && formValues.desc && formValues.val !== undefined) {
+                    
+                    const updateTx = (t, vals) => {
+                        const suffixMatch = t.description.match(/\(\d+\/\d+\)$/);
+                        const suffix = suffixMatch ? ` ${suffixMatch[0]}` : '';
+                        t.description = vals.desc + suffix;
+                        t.amount = vals.val; t.type = vals.type; t.categoryId = vals.cat;
+                        t.isPaid = vals.isPaid;
+                        if (t.id === tx.id) t.date = vals.date; 
+                        
+                        if (t.cardId && t.id === tx.id) {
+                            const card = this.state.cards.find(c => c.id === t.cardId);
+                            if (card) {
+                                const [y, m, d] = vals.date.split('-');
+                                let tm = parseInt(m); let ty = parseInt(y);
+                                if (parseInt(d) >= card.closingDay) { tm++; if(tm > 12) { tm = 1; ty++; } }
+                                t.invoiceMonth = `${ty}-${String(tm).padStart(2, '0')}`;
+                            }
+                        }
+                    };
+
+                    if (tx.installmentGroupId) {
+                        Swal.fire({
+                            title: 'Compra Parcelada',
+                            text: 'Deseja aplicar o novo Nome, Valor e Categoria para TODAS as parcelas dessa compra ou SÓ NESTA parcela específica?',
+                            icon: 'question',
+                            showDenyButton: true,
+                            showCancelButton: true,
+                            confirmButtonText: 'Todas',
+                            denyButtonText: 'Só esta',
+                            cancelButtonText: 'Cancelar',
+                            customClass: { confirmButton: 'swal2-confirm !bg-indigo-600', denyButton: 'swal2-deny !bg-slate-500' }
+                        }).then((res) => {
+                            if (res.isConfirmed) {
+                                this.state.transactions.filter(t => t.installmentGroupId === tx.installmentGroupId).forEach(t => updateTx(t, formValues));
+                                this.finishEditTx();
+                            } else if (res.isDenied) {
+                                updateTx(tx, formValues);
+                                this.finishEditTx();
+                            }
+                        });
+                    } else {
+                        if (tx.debtId) {
+                            const debt = this.state.debts.find(d => d.id === tx.debtId);
+                            if (debt) {
+                                debt.paidAmount = debt.paidAmount - tx.amount + formValues.val;
+                                if (debt.paidAmount < 0) debt.paidAmount = 0;
+                            }
+                        }
+                        updateTx(tx, formValues);
+                        this.finishEditTx();
+                    }
+                }
+            },
+            
+            finishEditTx() {
+                this.saveData();
+                this.renderTransactions();
+                if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
+                if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
+            },
+
+            deleteTransaction(id) { 
+                const tx = this.state.transactions.find(t => t.id === id);
+                if (!tx) return;
+
+                if (tx.type === 'cc_payment') {
+                    Swal.fire({ 
+                        title: 'Desfazer Pagamento?', 
+                        text: 'Deseja cancelar o pagamento desta fatura? As compras do cartão voltarão a ficar em aberto.', 
+                        icon: 'warning', 
+                        showCancelButton: true, 
+                        confirmButtonText: 'Sim, desfazer', 
+                        cancelButtonText: 'Cancelar' 
+                    }).then((res) => { 
+                        if (res.isConfirmed) this.executeDeleteTx(id);
+                    }); 
+                    return;
+                }
+
+                if (tx.installmentGroupId) {
+                    Swal.fire({
+                        title: 'Apagar Parcela?',
+                        text: 'Deseja apagar APENAS esta parcela ou cancelar esta e as FUTURAS?',
+                        icon: 'question',
+                        showDenyButton: true,
+                        showCancelButton: true,
+                        confirmButtonText: 'Só esta',
+                        denyButtonText: 'Esta e Futuras',
+                        cancelButtonText: 'Cancelar',
+                        customClass: { confirmButton: 'swal2-confirm !bg-indigo-600', denyButton: 'swal2-deny !bg-red-500' }
+                    }).then((res) => {
+                        if (res.isConfirmed) {
+                            this.executeDeleteTx(id);
+                        } else if (res.isDenied) {
+                            this.state.transactions = this.state.transactions.filter(t => 
+                                !(t.installmentGroupId === tx.installmentGroupId && t.date >= tx.date)
+                            );
+                            this.saveData(); 
+                            this.renderTransactions(); 
+                            if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                            if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Apagado!', showConfirmButton: false, timer: 1500 });
+                        }
+                    });
+                } else {
+                    Swal.fire({ 
+                        title: 'Excluir Transação?', 
+                        text: 'Tem certeza que deseja apagar este registro do histórico?', 
+                        icon: 'warning', 
+                        showCancelButton: true, 
+                        confirmButtonText: 'Sim, apagar', 
+                        cancelButtonText: 'Cancelar' 
+                    }).then((res) => { 
+                        if (res.isConfirmed) this.executeDeleteTx(id);
+                    }); 
+                }
+            },
+            
+            executeDeleteTx(id) {
+                const tx = this.state.transactions.find(t => t.id === id);
+                if (tx && tx.debtId) {
+                    const debt = this.state.debts.find(d => d.id === tx.debtId);
+                    if (debt) {
+                        debt.paidAmount -= tx.amount;
+                        if (debt.paidAmount < 0) debt.paidAmount = 0;
+                    }
+                }
+                
+                if (tx && tx.type === 'cc_payment') {
+                    // Reabre as contas pagas por esta fatura
+                    const related = this.state.transactions.filter(t => t.cardId === tx.paidCardId && t.invoiceMonth === tx.paidInvoiceMonth);
+                    related.forEach(t => t.isPaid = false);
+                    // Apaga os restos de fatura que nasceram desse pagamento
+                    this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id);
+                }
+
+                this.state.transactions = this.state.transactions.filter(t => t.id !== id); 
+                this.saveData(); 
+                this.renderTransactions(); 
+                if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); 
+                if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
+                if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Apagado!', showConfirmButton: false, timer: 1500 });
+            },
+
             renderTransactions() {
-                const filter = document.getElementById('list-month-filter').value; const tbody = document.getElementById('tx-table-body'); tbody.innerHTML = '';
-                const filtered = this.state.transactions.filter(t => t.date.startsWith(filter)).sort((a,b) => new Date(b.date) - new Date(a.date));
+                const filterMonth = document.getElementById('list-month-filter') ? document.getElementById('list-month-filter').value : ''; 
+                const hidePaid = document.getElementById('list-hide-paid') ? document.getElementById('list-hide-paid').checked : false;
+                const search = document.getElementById('list-search') ? document.getElementById('list-search').value.toLowerCase() : '';
+                const catFilter = document.getElementById('list-cat-filter') ? document.getElementById('list-cat-filter').value : '';
+                
+                const tbody = document.getElementById('tx-table-body'); tbody.innerHTML = '';
+                
+                let filtered = this.state.transactions;
+
+                if (filterMonth) { filtered = filtered.filter(t => t.date.startsWith(filterMonth)); }
+                if (hidePaid) { filtered = filtered.filter(t => !t.isPaid); }
+                if (search) { filtered = filtered.filter(t => t.description.toLowerCase().includes(search)); }
+                if (catFilter) { filtered = filtered.filter(t => t.categoryId === catFilter); }
+                
+                filtered = filtered.sort((a,b) => new Date(b.date) - new Date(a.date));
+                
                 if (filtered.length === 0) { tbody.innerHTML = `<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhum registro encontrado.</div>`; return; }
                 filtered.forEach(tx => {
-                    const cat = this.state.categories.find(c => c.id === tx.categoryId); const isInc = tx.type === 'income'; const [y,m,d] = tx.date.split('-');
+                    const cat = this.state.categories.find(c => c.id === tx.categoryId); 
+                    const isInc = tx.type === 'income'; 
+                    const [y,m,d] = tx.date.split('-');
+                    let iconHtml = `<div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>`;
+                    let cardBadge = '';
+                    
+                    if (tx.cardId) {
+                        const card = this.state.cards.find(c => c.id === tx.cardId);
+                        if (card) cardBadge = `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-slate-800 dark:bg-slate-700 uppercase" style="border-left: 2px solid ${card.color}">${this.escapeHTML(card.name)}</span>`;
+                    }
+                    if (tx.type === 'cc_payment') {
+                        iconHtml = `<div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center text-lg flex-shrink-0 border border-indigo-100 dark:border-indigo-800"><i class="ph ph-receipt"></i></div>`;
+                    }
+
+                    let paidActionHtml = '';
+                    if (tx.cardId && tx.type !== 'cc_payment') {
+                        paidActionHtml = `<div class="w-8 h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-300 dark:text-slate-600'} flex-shrink-0" title="Pago junto com a fatura"><i class="ph ${tx.isPaid ? 'ph-check-circle' : 'ph-lock'} text-lg"></i></div>`;
+                    } else {
+                        paidActionHtml = `<button onclick="app.togglePaid('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800'} active:scale-95 flex-shrink-0 transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-lg"></i></button>`;
+                    }
+
                     tbody.innerHTML += `
                         <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
                             <div class="flex items-center gap-3 flex-1 min-w-0">
-                                <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>
+                                ${iconHtml}
                                 <div class="flex flex-col min-w-0 flex-1">
-                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full">${this.escapeHTML(tx.description)}</span>
-                                    <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate w-full">${d}/${m} • ${cat ? this.escapeHTML(cat.name) : 'Outros'}</span>
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full ${tx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(tx.description)}</span>
+                                    <div class="flex items-center gap-2 mt-0.5 w-full">
+                                        <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate ${tx.isPaid ? 'opacity-50' : ''}">${d}/${m}/${y} • ${cat ? this.escapeHTML(cat.name) : 'Cartão'}</span>
+                                        ${cardBadge}
+                                    </div>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2 flex-shrink-0">
-                                <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right ${isInc ? 'text-emerald-500' : 'text-rose-500'}">${isInc ? '+' : '-'} ${this.formatCurrency(tx.amount)}</span>
-                                <button onclick="app.deleteTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95 flex-shrink-0"><i class="ph ph-trash text-lg"></i></button>
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right pr-2 ${isInc ? 'text-emerald-500' : 'text-rose-500'} ${tx.isPaid ? 'opacity-50' : ''}">${isInc ? '+' : '-'} ${this.formatCurrency(tx.amount)}</span>
+                                ${paidActionHtml}
+                                <button onclick="app.editTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                <button onclick="app.deleteTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-trash text-lg"></i></button>
                             </div>
                         </div>
                     `;
@@ -515,8 +1304,52 @@
                     debt.paidAmount += Number(amount);
                     let cat = this.state.categories.find(c => c.name === 'Pagamento de Dívida');
                     if(!cat) { cat = { id: this.generateId(), name: 'Pagamento de Dívida', icon: '💸', type: 'expense', budgetLimit: 0 }; this.state.categories.push(cat); }
-                    this.state.transactions.push({ id: this.generateId(), description: `Pag. Dívida: ${debt.title}`, amount: Number(amount), date: new Date().toISOString().split('T')[0], type: 'expense', categoryId: cat.id });
+                    
+                    this.state.transactions.push({ 
+                        id: this.generateId(), 
+                        debtId: debt.id,
+                        description: `Pag. Dívida: ${debt.title}`, 
+                        amount: Number(amount), 
+                        date: new Date().toISOString().split('T')[0], 
+                        type: 'expense', 
+                        categoryId: cat.id,
+                        isPaid: true
+                    });
+                    
                     this.saveData(); this.renderDebts(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Debitado!', showConfirmButton: false, timer: 2000 });
+                }
+            },
+            async editDebt(id) {
+                const debt = this.state.debts.find(d => d.id === id); if (!debt) return;
+                const { value: formValues } = await Swal.fire({ 
+                    title: 'Editar Dívida', 
+                    html: `
+                        <div class="text-left px-2">
+                            <label class="block text-sm font-bold text-slate-700 dark:text-slate-200 mt-2">Nome da Dívida</label>
+                            <input id="swal-e-d-title" class="swal2-input !mt-1" value="${this.escapeHTML(debt.title)}">
+                            <label class="block text-sm font-bold text-slate-700 dark:text-slate-200 mt-4">Valor Total (R$)</label>
+                            <input id="swal-e-d-total" type="number" step="0.01" class="swal2-input !mt-1" value="${debt.totalAmount}">
+                            <p class="text-xs text-slate-500 mt-4 font-bold text-center border-t border-slate-200 dark:border-slate-700 pt-3">💡 Para corrigir o valor pago, edite ou apague a transação na aba Extrato.</p>
+                        </div>`, 
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => { 
+                        return { 
+                            title: document.getElementById('swal-e-d-title').value, 
+                            totalAmount: Number(document.getElementById('swal-e-d-total').value)
+                        } 
+                    } 
+                });
+                if (formValues && formValues.title && formValues.totalAmount >= 0) { 
+                    debt.title = formValues.title; 
+                    debt.totalAmount = formValues.totalAmount; 
+                    
+                    this.state.transactions.filter(t => t.debtId === id).forEach(t => {
+                        t.description = `Pag. Dívida: ${formValues.title}`;
+                    });
+
+                    this.saveData(); this.renderDebts(); 
+                    if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 }); 
                 }
             },
             deleteDebt(id) { Swal.fire({ title: 'Apagar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.debts = this.state.debts.filter(d => d.id !== id); this.saveData(); this.renderDebts(); } }); },
@@ -524,7 +1357,7 @@
                 const container = document.getElementById('debts-container'); container.innerHTML = '';
                 if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; return; }
                 this.state.debts.forEach(d => {
-                    const remaining = d.totalAmount - d.paidAmount; const pct = Math.min(100, (d.paidAmount / d.totalAmount) * 100); const isPaid = remaining <= 0;
+                    const remaining = d.totalAmount - d.paidAmount; const pct = Math.min(100, (Math.max(0, d.paidAmount) / Math.max(1, d.totalAmount)) * 100); const isPaid = remaining <= 0;
                     container.innerHTML += `
                         <div class="card p-5 flex flex-col justify-between gap-3 w-full">
                             <div class="flex justify-between items-start gap-2 w-full min-w-0">
@@ -538,6 +1371,7 @@
                             </div>
                             <div class="flex gap-2 mt-2 w-full">
                                 ${!isPaid ? `<button onclick="app.payDebt('${d.id}')" class="btn-primary flex-1 !py-3 !text-sm">Pagar</button>` : ''}
+                                <button onclick="app.editDebt('${d.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-pencil-simple text-lg"></i></button>
                                 <button onclick="app.deleteDebt('${d.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-trash text-lg"></i></button>
                             </div>
                         </div>
@@ -546,15 +1380,83 @@
             },
 
             async newGoal() {
-                const { value: formValues } = await Swal.fire({ title: 'Novo Cofrinho', html: `<input id="swal-g-title" class="swal2-input" placeholder="Objetivo?"><input id="swal-g-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Criar', cancelButtonText: 'Cancelar', preConfirm: () => { return { title: document.getElementById('swal-g-title').value, targetAmount: Number(document.getElementById('swal-g-val').value) } } });
-                if (formValues && formValues.title && formValues.targetAmount) { this.state.goals.push({ id: this.generateId(), title: formValues.title, targetAmount: formValues.targetAmount, savedAmount: 0 }); this.saveData(); this.renderGoals(); }
+                const { value: formValues } = await Swal.fire({ 
+                    title: 'Novo Cofrinho', 
+                    html: `
+                        <input id="swal-g-title" class="swal2-input" placeholder="Objetivo?">
+                        <input id="swal-g-val" type="number" step="0.01" class="swal2-input" placeholder="Valor Alvo (R$)">
+                        <div class="mt-4 text-left px-3 text-xs font-bold text-slate-500">Valor já guardado fora do app (Opcional)</div>
+                        <input id="swal-g-init" type="number" step="0.01" class="swal2-input !mt-1" placeholder="R$ 0,00">
+                    `, 
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Criar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => { 
+                        return { 
+                            title: document.getElementById('swal-g-title').value, 
+                            targetAmount: Number(document.getElementById('swal-g-val').value),
+                            initAmount: Number(document.getElementById('swal-g-init').value) || 0
+                        } 
+                    } 
+                });
+                if (formValues && formValues.title && formValues.targetAmount) { 
+                    this.state.goals.push({ 
+                        id: this.generateId(), 
+                        title: formValues.title, 
+                        targetAmount: formValues.targetAmount, 
+                        savedAmount: formValues.initAmount,
+                        appSavedAmount: 0 // <--- Valor iniciado não desconta do Saldo Livre
+                    }); 
+                    this.saveData(); this.renderGoals(); 
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                }
             },
             async fundGoal(id) {
                 const goal = this.state.goals.find(g => g.id === id);
                 const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${this.escapeHTML(goal.title)}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
-                if (amount) { goal.savedAmount += Number(amount); this.saveData(); this.renderGoals(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); }
+                if (amount) { 
+                    goal.savedAmount += Number(amount); 
+                    goal.appSavedAmount = (goal.appSavedAmount || 0) + Number(amount); // Aqui desconta do Saldo Livre!
+                    this.saveData(); this.renderGoals(); 
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); 
+                }
             },
-            deleteGoal(id) { Swal.fire({ title: 'Quebrar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.goals = this.state.goals.filter(g => g.id !== id); this.saveData(); this.renderGoals(); } }); },
+            async editGoal(id) {
+                const goal = this.state.goals.find(g => g.id === id); if(!goal) return;
+                const { value: formValues } = await Swal.fire({
+                    title: 'Editar Cofrinho',
+                    html: `
+                        <label class="block text-sm font-bold text-slate-700 dark:text-slate-200 mt-2 text-left px-2">Objetivo</label>
+                        <input id="swal-e-g-title" class="swal2-input !mt-1" value="${this.escapeHTML(goal.title)}">
+                        <label class="block text-sm font-bold text-slate-700 dark:text-slate-200 mt-4 text-left px-2">Alvo (R$)</label>
+                        <input id="swal-e-g-target" type="number" step="0.01" class="swal2-input !mt-1" value="${goal.targetAmount}">
+                        <label class="block text-sm font-bold text-slate-700 dark:text-slate-200 mt-4 text-left px-2">Total Guardado (R$)</label>
+                        <input id="swal-e-g-saved" type="number" step="0.01" class="swal2-input !mt-1" value="${goal.savedAmount}">
+                        
+                        <div class="mt-5 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/50">
+                            <label class="block text-sm font-black text-indigo-700 dark:text-indigo-300 text-left mb-1">Descontar do Saldo Livre? (R$)</label>
+                            <p class="text-[11px] font-bold text-indigo-600/80 dark:text-indigo-400 mb-2 text-left leading-tight">Apenas o valor abaixo será reduzido do seu Saldo Livre. Reduza para corrigir bugs de saldo.</p>
+                            <input id="swal-e-g-app" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${goal.appSavedAmount !== undefined ? goal.appSavedAmount : goal.savedAmount}">
+                        </div>
+                    `,
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
+                    preConfirm: () => {
+                        return {
+                            title: document.getElementById('swal-e-g-title').value,
+                            targetAmount: Number(document.getElementById('swal-e-g-target').value),
+                            savedAmount: Number(document.getElementById('swal-e-g-saved').value),
+                            appSavedAmount: Number(document.getElementById('swal-e-g-app').value)
+                        }
+                    }
+                });
+                if (formValues && formValues.title && formValues.targetAmount) {
+                    goal.title = formValues.title; goal.targetAmount = formValues.targetAmount; 
+                    goal.savedAmount = formValues.savedAmount; goal.appSavedAmount = formValues.appSavedAmount;
+                    this.saveData(); this.renderGoals();
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
+                }
+            },
+            deleteGoal(id) { Swal.fire({ title: 'Quebrar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.goals = this.state.goals.filter(g => g.id !== id); this.saveData(); this.renderGoals(); if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); } }); },
             renderGoals() {
                 const container = document.getElementById('goals-container'); container.innerHTML = '';
                 if (this.state.goals.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhum cofrinho criado.</div>'; return; }
@@ -573,6 +1475,7 @@
                             </div>
                             <div class="flex gap-2 mt-2 w-full">
                                 <button onclick="app.fundGoal('${g.id}')" class="btn-primary flex-1 !py-3 !text-sm ${isDone?'bg-emerald-600':''}" ${isDone?'disabled':''}>${isDone ? 'Atingida' : 'Guardar'}</button>
+                                <button onclick="app.editGoal('${g.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-pencil-simple text-lg"></i></button>
                                 <button onclick="app.deleteGoal('${g.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-trash text-lg"></i></button>
                             </div>
                         </div>
@@ -581,23 +1484,58 @@
             },
 
             async newCategory() {
-                const { value: formValues } = await Swal.fire({ title: 'Categoria', html: `<input id="c-name" class="swal2-input" placeholder="Nome"><input id="c-icon" class="swal2-input" placeholder="1 Emoji"><select id="c-type" class="swal2-select font-bold"><option value="expense">Despesa</option><option value="income">Receita</option></select><input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal (Opcional)">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { name: document.getElementById('c-name').value, icon: document.getElementById('c-icon').value || '📌', type: document.getElementById('c-type').value, budgetLimit: Number(document.getElementById('c-limit').value || 0) } } });
-                if (formValues && formValues.name) { this.state.categories.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderCategories(); }
+                const { value: formValues } = await Swal.fire({ 
+                    title: 'Categoria', 
+                    html: `
+                        <input id="c-name" class="swal2-input" placeholder="Nome">
+                        <input id="c-icon" class="swal2-input" placeholder="1 Emoji" oninput="if([...this.value].length > 1) this.value = [...this.value][0]">
+                        <select id="c-type" class="swal2-select font-bold">
+                            <option value="expense">Despesa</option>
+                            <option value="income">Receita</option>
+                        </select>
+                        <input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal (Opcional)">
+                    `, 
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => { 
+                        return { 
+                            name: document.getElementById('c-name').value, 
+                            icon: document.getElementById('c-icon').value || '📌', 
+                            type: document.getElementById('c-type').value, 
+                            budgetLimit: Number(document.getElementById('c-limit').value || 0) 
+                        } 
+                    } 
+                });
+                if (formValues && formValues.name) { this.state.categories.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderCategories(); this.populateCatFilter(); }
             },
             async editCategory(id) {
                 const cat = this.state.categories.find(c => c.id === id); if (!cat) return;
-                const { value: formValues } = await Swal.fire({ title: 'Editar Categoria', html: `<input id="c-name" class="swal2-input" value="${cat.name}"><input id="c-icon" class="swal2-input" value="${cat.icon}"><select id="c-type" class="swal2-select font-bold"><option value="expense" ${cat.type === 'expense' ? 'selected' : ''}>Despesa</option><option value="income" ${cat.type === 'income' ? 'selected' : ''}>Receita</option></select><input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal" value="${cat.budgetLimit || ''}">`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { name: document.getElementById('c-name').value, icon: document.getElementById('c-icon').value || '📌', type: document.getElementById('c-type').value, budgetLimit: Number(document.getElementById('c-limit').value || 0) } } });
-                if (formValues && formValues.name) { cat.name = formValues.name; cat.icon = formValues.icon; cat.type = formValues.type; cat.budgetLimit = formValues.budgetLimit; this.saveData(); this.renderCategories(); this.renderDashboard(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizada!', showConfirmButton: false, timer: 1500 }); }
+                const { value: formValues } = await Swal.fire({ 
+                    title: 'Editar Categoria', 
+                    html: `
+                        <input id="c-name" class="swal2-input" value="${cat.name}">
+                        <input id="c-icon" class="swal2-input" value="${cat.icon}" oninput="if([...this.value].length > 1) this.value = [...this.value][0]">
+                        <select id="c-type" class="swal2-select font-bold">
+                            <option value="expense" ${cat.type === 'expense' ? 'selected' : ''}>Despesa</option>
+                            <option value="income" ${cat.type === 'income' ? 'selected' : ''}>Receita</option>
+                        </select>
+                        <input id="c-limit" type="number" step="1" class="swal2-input" placeholder="Teto Mensal" value="${cat.budgetLimit || ''}">
+                    `, 
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => { 
+                        return { 
+                            name: document.getElementById('c-name').value, 
+                            icon: document.getElementById('c-icon').value || '📌', 
+                            type: document.getElementById('c-type').value, 
+                            budgetLimit: Number(document.getElementById('c-limit').value || 0) 
+                        } 
+                    } 
+                });
+                if (formValues && formValues.name) { cat.name = formValues.name; cat.icon = formValues.icon; cat.type = formValues.type; cat.budgetLimit = formValues.budgetLimit; this.saveData(); this.renderCategories(); this.populateCatFilter(); if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizada!', showConfirmButton: false, timer: 1500 }); }
             },
             deleteCategory(id) {
                 if(this.state.transactions.some(t => t.categoryId === id)) { Swal.fire('Aviso', 'Exclua as transações dessa categoria primeiro.', 'error'); return; }
-                
-                if(this.state.recurring.some(r => r.categoryId === id)) { 
-                    Swal.fire('Aviso', 'Esta categoria está sendo usada em uma Conta Automática. Altere ou exclua a conta antes de apagar a categoria.', 'error'); 
-                    return; 
-                }
-
-                this.state.categories = this.state.categories.filter(c => c.id !== id); this.saveData(); this.renderCategories();
+                if(this.state.recurring.some(r => r.categoryId === id)) { Swal.fire('Aviso', 'Esta categoria está sendo usada em uma Conta Automática. Altere ou exclua a conta antes de apagar a categoria.', 'error'); return; }
+                this.state.categories = this.state.categories.filter(c => c.id !== id); this.saveData(); this.renderCategories(); this.populateCatFilter();
             },
             renderCategories() {
                 const container = document.getElementById('categories-container'); container.innerHTML = '';
@@ -605,12 +1543,10 @@
                     container.innerHTML += `
                         <div class="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm w-full gap-2">
                             <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${c.icon}</div>
-                            
                             <div class="flex flex-col flex-1 min-w-0 pr-1">
                                 <span class="font-black text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${this.escapeHTML(c.name)}</span>
                                 ${c.budgetLimit > 0 ? `<span class="text-[9px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-full uppercase mt-0.5 truncate w-max max-w-full block">Teto: ${this.formatCurrency(c.budgetLimit)}</span>` : ''}
                             </div>
-                            
                             <div class="flex items-center gap-1.5 flex-shrink-0">
                                 <button onclick="app.editCategory('${c.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95"><i class="ph ph-pencil-simple text-base"></i></button>
                                 <button onclick="app.deleteCategory('${c.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95"><i class="ph ph-x text-base"></i></button>
@@ -678,7 +1614,7 @@
 
                     this.saveData();
                     this.renderRecurringList();
-                    this.renderDashboard(); 
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); 
                     if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
                 }
@@ -720,30 +1656,9 @@
                 this.state.recurring = this.state.recurring.filter(r => r.id !== id); 
                 this.saveData(); 
                 this.renderRecurringList(); 
-                this.renderDashboard();
+                if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                 if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
                 Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Conta apagada!', showConfirmButton: false, timer: 1500 });
-            },
-            
-            renderRecurringList() {
-                const container = document.getElementById('recurring-container'); container.innerHTML = '';
-                if(this.state.recurring.length === 0){ container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhuma conta fixa.</div>'; return; }
-                this.state.recurring.forEach(r => {
-                    const isInc = r.type === 'income';
-                    container.innerHTML += `
-                        <div class="flex items-center justify-between p-3.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors gap-2 w-full">
-                            <div class="flex items-center gap-3 flex-1 min-w-0">
-                                <div class="w-9 h-9 rounded-full bg-indigo-50 dark:bg-slate-700/50 flex items-center justify-center font-black text-indigo-500 flex-shrink-0 text-[10px] border border-slate-200 dark:border-slate-600">D.${String(r.day).padStart(2,'0')}</div>
-                                <span class="font-bold text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${this.escapeHTML(r.description)}</span>
-                            </div>
-                            <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <span class="font-black text-sm ${isInc ? 'text-emerald-500' : 'text-rose-500'} truncate max-w-[80px]">${this.formatCurrency(r.amount)}</span>
-                                <button onclick="app.editRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50 active:scale-95"><i class="ph ph-pencil-simple text-lg"></i></button>
-                                <button onclick="app.deleteRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-transparent active:scale-95"><i class="ph ph-trash text-lg"></i></button>
-                            </div>
-                        </div>
-                    `;
-                });
             },
             
             exportJSON() { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.state)); const dlAnchorElem = document.createElement('a'); dlAnchorElem.setAttribute("href", dataStr); dlAnchorElem.setAttribute("download", `konta_backup.json`); dlAnchorElem.click(); },
@@ -756,17 +1671,12 @@
         document.addEventListener('DOMContentLoaded', () => { app.init(); });
     </script>
 
-    <!-- Script de Registro do Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('sw.js')
-                    .then(registration => {
-                        console.log('Modo Offline ativado com sucesso!', registration.scope);
-                    })
-                    .catch(error => {
-                        console.log('Falha ao ativar o modo offline:', error);
-                    });
+                    .then(registration => { console.log('Modo Offline ativado com sucesso!', registration.scope); })
+                    .catch(error => { console.log('Falha ao ativar o modo offline:', error); });
             });
         }
     </script>
