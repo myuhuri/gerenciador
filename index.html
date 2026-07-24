@@ -36,7 +36,6 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
         .dark ::-webkit-scrollbar-thumb { background: #475569; }
         
-        /* Utilitário para ocultar scrollbar no menu mobile mas manter o swipe */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -62,7 +61,6 @@
         .dark .swal2-input, .dark .swal2-select { background: #334155 !important; border-color: #475569 !important; color: white !important; }
         .dark .swal2-title, .dark .swal2-html-container { color: #f1f5f9 !important; }
 
-        /* Grid Totalmente Responsiva usando min() */
         .grid-auto-fit {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
@@ -1080,11 +1078,22 @@
                         </select>
                         <select id="tx-cat" class="swal2-select">${catOpts('expense')}</select>
                         
+                        <div id="tx-paid-container" class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                            <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                <input type="checkbox" id="tx-is-paid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" checked>
+                                Já foi pago / recebido?
+                            </label>
+                        </div>
+
                         <div id="tx-expense-options" style="display: block;">
                             <div class="mt-5 text-left px-2 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
                                 ${this.state.cards.length > 0 ? `
                                     <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-3">
-                                        <input type="checkbox" id="tx-is-cc" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="document.getElementById('tx-cc-container').classList.toggle('hidden')">
+                                        <input type="checkbox" id="tx-is-cc" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="
+                                            document.getElementById('tx-cc-container').classList.toggle('hidden');
+                                            const pCont = document.getElementById('tx-paid-container');
+                                            if(pCont) pCont.style.display = this.checked ? 'none' : 'block';
+                                        ">
                                         Pago no Cartão de Crédito?
                                     </label>
                                     <div id="tx-cc-container" class="hidden mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
@@ -1113,6 +1122,9 @@
                         const desc = document.getElementById('tx-desc').value; const val = document.getElementById('tx-val').value;
                         const date = document.getElementById('tx-date').value; const type = document.getElementById('tx-type').value; const cat = document.getElementById('tx-cat').value;
                         
+                        const isPaidEl = document.getElementById('tx-is-paid');
+                        const isPaid = isPaidEl ? isPaidEl.checked : true;
+
                         let isInstallment = false;
                         let instMode = null;
                         let instCount = null;
@@ -1130,7 +1142,7 @@
                         if (!desc || !val || !date || !cat) { Swal.showValidationMessage('Preencha os campos obrigatórios!'); return false; }
                         if (isInstallment && (!instCount || instCount < 2)) { Swal.showValidationMessage('Insira um número válido de parcelas (mínimo 2)!'); return false; }
                         
-                        return { desc, val, date, type, cat, isInstallment, instMode, instCount: Number(instCount), isCC, cardId };
+                        return { desc, val, date, type, cat, isInstallment, instMode, instCount: Number(instCount), isCC, cardId, isPaid };
                     }
                 });
 
@@ -1168,7 +1180,7 @@
                                 date: dateStr,
                                 type: formValues.type,
                                 categoryId: formValues.cat,
-                                isPaid: false,
+                                isPaid: card ? false : (i === 1 ? formValues.isPaid : false),
                                 cardId: card ? card.id : null,
                                 invoiceMonth: invMonth
                             });
@@ -1182,7 +1194,7 @@
 
                         this.state.transactions.push({ 
                             id: this.generateId(), description: formValues.desc, amount: Number(formValues.val), date: formValues.date, 
-                            type: formValues.type, categoryId: formValues.cat, isPaid: false, cardId: card ? card.id : null, invoiceMonth: invMonth 
+                            type: formValues.type, categoryId: formValues.cat, isPaid: card ? false : formValues.isPaid, cardId: card ? card.id : null, invoiceMonth: invMonth 
                         }); 
                     }
 
