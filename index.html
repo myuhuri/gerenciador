@@ -488,7 +488,7 @@
                 save('categories', this.state.categories);
                 save('recurring', this.state.recurring);
                 save('debts', this.state.debts);
-                save('goals', this.state.goals);
+                save('goals', this.state.cards);
                 save('cards', this.state.cards);
                 
                 localStorage.setItem('gf_theme', this.state.theme);
@@ -584,7 +584,6 @@
             updateStatusIcon() {
                 const d = new Date();
                 const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                // ISOLAMENTO DE MÊS: O ícone agora olha APENAS para o mês atual!
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(nowMonth));
                 
                 const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
@@ -696,13 +695,11 @@
             renderDashboard() {
                 const filter = document.getElementById('dash-month-filter').value; if(!filter) return;
                 
-                // ISOLAMENTO DE MÊS NO DASHBOARD: Filtra rigorosamente o mês ativo, não mistura meses anteriores.
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
                 
                 const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
                 const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
                 
-                // O Saldo Livre agora reflete APENAS a matemática de entradas e saídas pagas daquele exato mês!
                 const balance = cashIncome - cashExpense;
                 document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
 
@@ -784,12 +781,10 @@
                             if (t.isPaid) return false;
                             if (t.type !== 'expense' || t.type === 'cc_payment') return false;
                             
-                            // Para despesas de cartão, consideramos o mês da FATURA
                             if (t.cardId && t.invoiceMonth) {
                                 return t.invoiceMonth === monthKey;
                             }
                             
-                            // Para outras, consideramos a data normal
                             return t.date.startsWith(monthKey);
                         })
                         .reduce((acc, t) => acc + Number(t.amount), 0);
@@ -1522,7 +1517,6 @@
                 if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
                 if(document.getElementById('cards').classList.contains('active')) this.renderCards();
                 
-                // Verifica o teto se for uma despesa
                 if (tx && tx.type === 'expense') {
                     this.checkBudgetAndNotify(tx.categoryId, tx.date, true);
                 } else {
@@ -1650,19 +1644,22 @@
                 if (search) { filtered = filtered.filter(t => t.description.toLowerCase().includes(search)); }
                 if (catFilter) { filtered = filtered.filter(t => t.categoryId === catFilter); }
                 
-                filtered = filtered.sort((a,b) => new Date(b.date) - new Date(a.date));
-                
                 if (filtered.length === 0) { tbody.innerHTML = `<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhum registro encontrado.</div>`; return; }
-                filtered.forEach(tx => {
+
+                const generateTxRow = (tx, isSubItem = false) => {
                     const cat = this.state.categories.find(c => c.id === tx.categoryId); 
                     const isInc = tx.type === 'income'; 
                     const [y,m,d] = tx.date.split('-');
                     let iconHtml = `<div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>`;
                     let cardBadge = '';
                     
+                    let cardColor = '#cbd5e1';
                     if (tx.cardId) {
                         const card = this.state.cards.find(c => c.id === tx.cardId);
-                        if (card) cardBadge = `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-slate-800 dark:bg-slate-700 uppercase" style="border-left: 2px solid ${card.color}">${this.escapeHTML(card.name)}</span>`;
+                        if (card) {
+                            cardColor = card.color;
+                            cardBadge = `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-slate-800 dark:bg-slate-700 uppercase" style="border-left: 2px solid ${card.color}">${this.escapeHTML(card.name)}</span>`;
+                        }
                     }
                     if (tx.type === 'cc_payment') {
                         iconHtml = `<div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center text-lg flex-shrink-0 border border-indigo-100 dark:border-indigo-800"><i class="ph ph-receipt"></i></div>`;
@@ -1675,15 +1672,15 @@
                         paidActionHtml = `<button onclick="app.togglePaid('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800'} active:scale-95 flex-shrink-0 transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-lg"></i></button>`;
                     }
 
-                    tbody.innerHTML += `
-                        <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
+                    return `
+                        <div class="flex items-center justify-between p-4 ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 dark:hover:bg-slate-800/60 pl-8 md:pl-12 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80'} transition-colors gap-3 w-full" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
                             <div class="flex items-center gap-3 flex-1 min-w-0">
                                 ${iconHtml}
                                 <div class="flex flex-col min-w-0 flex-1">
                                     <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full ${tx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(tx.description)}</span>
                                     <div class="flex items-center gap-2 mt-0.5 w-full">
                                         <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate ${tx.isPaid ? 'opacity-50' : ''}">${d}/${m}/${y} • ${cat ? this.escapeHTML(cat.name) : 'Cartão'}</span>
-                                        ${cardBadge}
+                                        ${!isSubItem ? cardBadge : ''}
                                     </div>
                                 </div>
                             </div>
@@ -1696,7 +1693,86 @@
                             </div>
                         </div>
                     `;
+                };
+
+                let displayList = [];
+                let invoiceMap = {};
+
+                filtered.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+                filtered.forEach(tx => {
+                    if (tx.cardId && tx.type !== 'cc_payment' && tx.invoiceMonth) {
+                        let key = `${tx.cardId}_${tx.invoiceMonth}`;
+                        if (!invoiceMap[key]) {
+                            invoiceMap[key] = {
+                                isGroup: true,
+                                key: key,
+                                cardId: tx.cardId,
+                                invoiceMonth: tx.invoiceMonth,
+                                items: [],
+                                total: 0,
+                                allPaid: true,
+                                sortDate: tx.date
+                            };
+                            displayList.push(invoiceMap[key]);
+                        }
+                        invoiceMap[key].items.push(tx);
+                        invoiceMap[key].total += Number(tx.amount);
+                        if (!tx.isPaid) invoiceMap[key].allPaid = false;
+                        if (new Date(tx.date) > new Date(invoiceMap[key].sortDate)) {
+                            invoiceMap[key].sortDate = tx.date;
+                        }
+                    } else {
+                        displayList.push(tx);
+                    }
                 });
+
+                displayList.sort((a, b) => {
+                    let dateA = a.isGroup ? a.sortDate : a.date;
+                    let dateB = b.isGroup ? b.sortDate : b.date;
+                    return new Date(dateB) - new Date(dateA);
+                });
+
+                let finalHtml = '';
+                displayList.forEach(item => {
+                    if (item.isGroup) {
+                        const card = this.state.cards.find(c => c.id === item.cardId) || { name: 'Cartão Apagado', color: '#6366f1' };
+                        const [y, m] = item.invoiceMonth.split('-');
+                        const txsHtml = item.items.map(t => generateTxRow(t, true)).join('');
+                        
+                        finalHtml += `
+                            <div class="w-full flex flex-col bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700/50">
+                                <div onclick="document.getElementById('inv-group-${item.key}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors cursor-pointer w-full group">
+                                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                                        <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 text-white shadow-sm" style="background-color: ${card.color}">
+                                            <i class="ph ph-credit-card"></i>
+                                        </div>
+                                        <div class="flex flex-col min-w-0 flex-1">
+                                            <span class="font-black text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Fatura ${this.escapeHTML(card.name)}</span>
+                                            <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate">Vencimento: ${m}/${y} • ${item.items.length} compra(s)</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3 flex-shrink-0">
+                                        <div class="flex flex-col text-right">
+                                            <span class="font-black text-sm md:text-base text-rose-500">- ${this.formatCurrency(item.total)}</span>
+                                            <span class="text-[10px] font-bold ${item.allPaid ? 'text-emerald-500' : 'text-slate-400'}">${item.allPaid ? 'PAGA' : 'EM ABERTO'}</span>
+                                        </div>
+                                        <div class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-700/50 flex items-center justify-center text-slate-400 transition-colors">
+                                            <i class="ph ph-caret-down transition-transform duration-300 ${search ? 'rotate-180' : ''}"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="inv-group-${item.key}" class="${search ? 'flex' : 'hidden'} flex-col w-full divide-y divide-slate-100/50 dark:divide-slate-700/30">
+                                    ${txsHtml}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        finalHtml += generateTxRow(item, false);
+                    }
+                });
+                
+                tbody.innerHTML = finalHtml;
             },
 
             async newDebt() {
