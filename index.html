@@ -109,6 +109,9 @@
             <button onclick="app.switchTab('transactions')" class="nav-btn flex-1 md:flex-none flex-shrink-0 min-w-[64px] flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                 <i class="ph ph-list-dashes text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Extrato</span>
             </button>
+            <button onclick="app.switchTab('forecast')" class="nav-btn flex-1 md:flex-none flex-shrink-0 min-w-[64px] flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                <i class="ph ph-calendar-blank text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Previsão</span>
+            </button>
             <button onclick="app.switchTab('debts')" class="nav-btn flex-1 md:flex-none flex-shrink-0 min-w-[64px] flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 md:gap-4 p-2 md:px-6 md:py-4 rounded-2xl md:rounded-full text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                 <i class="ph ph-notebook text-2xl"></i> <span class="text-[10px] md:text-base font-bold">Dívidas</span>
             </button>
@@ -201,6 +204,16 @@
             </div>
         </section>
 
+        <section id="forecast" class="view-section space-y-6 w-full">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
+                <div class="w-full sm:w-auto">
+                    <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Previsão Detalhada</h2>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Projeções para os próximos meses.</p>
+                </div>
+            </div>
+            <div class="grid-auto-fit-lg w-full" id="forecast-container"></div>
+        </section>
+
         <section id="cards" class="view-section space-y-6 w-full">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
                 <div class="w-full sm:w-auto">
@@ -238,6 +251,10 @@
                         <label class="flex items-center gap-2 text-sm font-bold text-slate-500 cursor-pointer pl-1 w-full sm:w-auto">
                             <input type="checkbox" id="list-hide-paid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="app.renderTransactions()">
                             Ocultar Pagas
+                        </label>
+                        <label class="flex items-center gap-2 text-sm font-bold text-slate-500 cursor-pointer pl-1 w-full sm:w-auto">
+                            <input type="checkbox" id="list-group-cc" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" checked onchange="app.renderTransactions()">
+                            Agrupar Cartões
                         </label>
                     </div>
                 </div>
@@ -354,7 +371,7 @@
         </section>
     </main>
 
-    <script>
+<script>
         const bankDatalist = `
             <datalist id="bank-list">
                 <option value="Nubank"></option>
@@ -460,7 +477,6 @@
                 this.state.goals = parse('goals', []); 
                 this.state.cards = parse('cards', []); 
                 
-                // Tema continua global para não bugar a tela ao trocar de conta
                 this.state.theme = localStorage.getItem('gf_theme') || 'light';
                 
                 this.state.transactions.forEach(t => {
@@ -586,7 +602,8 @@
                 const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(nowMonth));
                 
-                const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                const cashIncome = validTx.filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null)).reduce((a,b) => a + Number(b.amount), 0);
                 const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
                 
                 const balance = cashIncome - cashExpense;
@@ -615,6 +632,7 @@
                 if(tabId === 'debts') this.renderDebts(); 
                 if(tabId === 'goals') this.renderGoals(); 
                 if(tabId === 'cards') this.renderCards();
+                if(tabId === 'forecast') this.renderForecastTab();
                 if(tabId === 'cadastros') { this.renderCategories(); this.renderRecurringList(); }
             },
 
@@ -694,15 +712,17 @@
 
             renderDashboard() {
                 const filter = document.getElementById('dash-month-filter').value; if(!filter) return;
-                
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
                 
-                const cashIncome = validTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                const cashIncome = validTx.filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null)).reduce((a,b) => a + Number(b.amount), 0);
                 const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
                 
-                const balance = cashIncome - cashExpense;
-                document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
+                const currentMonthGoals = this.state.goals.reduce((a, b) => a + (b.appSavedAmount || 0), 0);
+                const balance = (cashIncome - cashExpense) - currentMonthGoals;
 
+                document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
+                
                 const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type !== 'cc_payment');
                 const monthIncome = monthTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
                 const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
@@ -747,6 +767,53 @@
 
                 this.renderChart(expensesByCat);
                 this.renderForecastChart();
+            },
+
+            renderForecastTab() {
+                const container = document.getElementById('forecast-container');
+                if(!container) return;
+                container.innerHTML = '';
+                const now = new Date();
+                
+                for (let i = 0; i < 6; i++) {
+                    const futureDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                    const monthKey = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}`;
+                    const monthName = futureDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
+                    
+                    const cardTotals = {};
+                    this.state.transactions.forEach(t => {
+                        if(t.cardId && t.type !== 'cc_payment' && t.invoiceMonth === monthKey && !t.isPaid) {
+                            cardTotals[t.cardId] = (cardTotals[t.cardId] || 0) + Number(t.amount);
+                        }
+                    });
+
+                    const fixedCosts = this.state.recurring.filter(r => r.type === 'expense').reduce((acc, r) => acc + Number(r.amount), 0);
+                    const ccTotal = Object.values(cardTotals).reduce((a,b) => a+b, 0);
+                    
+                    let ccHtml = '';
+                    Object.keys(cardTotals).forEach(cid => {
+                        const card = this.state.cards.find(c => c.id === cid);
+                        if(card) ccHtml += `<div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700"><span class="text-slate-500">${card.name}</span> <span class="font-bold text-rose-500">${this.formatCurrency(cardTotals[cid])}</span></div>`;
+                    });
+
+                    container.innerHTML += `
+                        <div class="card p-5">
+                            <h3 class="font-black text-lg mb-4 text-indigo-600 dark:text-indigo-400">${monthName}</h3>
+                            <div class="mb-4">
+                                <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">Faturas de Cartão</p>
+                                ${ccHtml || '<p class="text-sm text-emerald-500 font-bold mt-1">Nenhuma fatura pendente</p>'}
+                            </div>
+                            <div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700">
+                                <span class="text-slate-500 font-bold">Despesas Fixas Estimadas</span>
+                                <span class="font-bold text-rose-500">${this.formatCurrency(fixedCosts)}</span>
+                            </div>
+                            <div class="mt-4 flex justify-between bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                                <span class="font-black text-slate-800 dark:text-slate-100">Custo Total Previsto</span>
+                                <span class="font-black text-rose-500">${this.formatCurrency(ccTotal + fixedCosts)}</span>
+                            </div>
+                        </div>
+                    `;
+                }
             },
 
             renderChart(expensesByCat = null) {
@@ -979,6 +1046,31 @@
                 }
             },
 
+            viewInvoiceDetails(cardId, invoiceMonth) {
+                const card = this.state.cards.find(c => c.id === cardId);
+                const txs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid).sort((a,b) => new Date(a.date) - new Date(b.date));
+                if(txs.length === 0) return;
+                
+                let listHtml = txs.map(t => {
+                    const [y,m,d] = t.date.split('-');
+                    return `<div class="flex justify-between items-center p-3 border-b border-slate-100 dark:border-slate-700 text-sm">
+                        <span class="truncate pr-2 text-left font-bold text-slate-800 dark:text-slate-100">${this.escapeHTML(t.description)}</span>
+                        <div class="text-right flex-shrink-0">
+                            <span class="block font-black text-rose-500">${this.formatCurrency(t.amount)}</span>
+                            <span class="text-[10px] font-bold text-slate-400">${d}/${m}/${y}</span>
+                        </div>
+                    </div>`;
+                }).join('');
+                
+                Swal.fire({
+                    title: `Fatura ${card.name}`,
+                    html: `<div class="max-h-72 overflow-y-auto mt-2 text-slate-700 dark:text-slate-200">${listHtml}</div>`,
+                    showConfirmButton: true,
+                    confirmButtonText: 'Fechar',
+                    customClass: { confirmButton: 'swal2-confirm !bg-indigo-600' }
+                });
+            },
+
             renderCards() {
                 const container = document.getElementById('cards-container');
                 if(!container) return;
@@ -1011,7 +1103,7 @@
                             
                             currentInvoiceHtml += `
                                 <div class="flex justify-between items-center ${!isFirst ? 'opacity-70 text-sm border-t border-slate-200 dark:border-slate-700 pt-3' : ''}">
-                                    <span class="font-bold text-slate-600 dark:text-slate-300 ${isFirst ? 'text-sm' : 'text-xs'}">Fatura ${m}/${y}</span>
+                                    <span class="font-bold text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-500 flex items-center gap-1 ${isFirst ? 'text-sm' : 'text-xs'}" onclick="app.viewInvoiceDetails('${card.id}', '${inv}')">Fatura ${m}/${y} <i class="ph ph-magnifying-glass"></i></span>
                                     <div class="flex items-center gap-3">
                                         <span class="font-black text-rose-500 ${isFirst ? 'text-lg' : 'text-sm'}">${this.formatCurrency(invoices[inv])}</span>
                                         ${isFirst ? `<button onclick="app.payInvoice('${card.id}', '${inv}')" class="bg-slate-800 dark:bg-indigo-600 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-sm active:scale-95 transition-all">Pagar</button>` : ''}
@@ -1023,7 +1115,6 @@
                         if (invoiceMonths.length > 3) {
                             currentInvoiceHtml += `<div class="text-center text-[10px] font-bold text-slate-400 mt-1">+ ${invoiceMonths.length - 3} faturas futuras</div>`;
                         }
-                        
                         currentInvoiceHtml += '</div>';
                     } else {
                         currentInvoiceHtml = '<p class="text-sm font-bold text-slate-500 mt-4 text-center bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">Fatura zerada 🎉</p>';
@@ -1363,19 +1454,63 @@
                 if (!tx) return;
 
                 if (tx.type === 'cc_payment') {
-                    Swal.fire({
-                        title: 'Pagamento de Fatura',
-                        text: 'Esta é uma transação gerada automaticamente. Para corrigir o valor ou cancelar, desfaça o pagamento (clicando na lixeira ou no botão de check ✅ no extrato) e pague novamente na aba Cartões.',
-                        icon: 'info',
-                        confirmButtonText: 'Entendi'
-                    });
+                    Swal.fire({ title: 'Pagamento de Fatura', text: 'Esta é uma transação gerada automaticamente. Para corrigir o valor, desfaça o pagamento e pague novamente.', icon: 'info' });
                     return;
                 }
 
-                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === tx.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
-                
-                let cleanDesc = tx.description;
-                if (tx.installmentGroupId) cleanDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '');
+                const thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
+                let isSplit = false;
+                let isInst = !!tx.installmentGroupId;
+                let splitName = '';
+                let baseDesc = tx.description;
+
+                if (tx.description.includes('(Minha parte)') || (thirdCat && tx.categoryId === thirdCat.id && tx.description.includes('('))) {
+                    isSplit = true;
+                    const matchDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '');
+                    if (tx.description.includes('(Minha parte)')) {
+                        baseDesc = matchDesc.replace(' (Minha parte)', '');
+                        let sibling = this.state.transactions.find(t => t.date === tx.date && t.categoryId === thirdCat?.id && t.description.startsWith(baseDesc) && t.installmentGroupId === tx.installmentGroupId);
+                        if(sibling) { const m = sibling.description.replace(/\s*\(\d+\/\d+\)$/, '').match(/\(([^)]+)\)$/); if(m) splitName = m[1]; }
+                    } else {
+                        const m = matchDesc.match(/(.+) \(([^)]+)\)$/);
+                        if(m) { baseDesc = m[1]; splitName = m[2]; }
+                    }
+                } else if (isInst) {
+                    baseDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '');
+                }
+
+                let myTotal = 0;
+                let theirTotal = 0;
+                let numInst = 1;
+                let myTxs = [];
+                let theirTxs = [];
+
+                if (isInst) {
+                    let groupTxs = this.state.transactions.filter(t => t.installmentGroupId === tx.installmentGroupId);
+                    if (isSplit) {
+                        myTxs = groupTxs.filter(t => t.description.includes('(Minha parte)'));
+                        theirTxs = groupTxs.filter(t => t.categoryId === thirdCat?.id);
+                        myTotal = myTxs.reduce((sum, t) => sum + t.amount, 0);
+                        theirTotal = theirTxs.reduce((sum, t) => sum + t.amount, 0);
+                        numInst = Math.max(myTxs.length, theirTxs.length);
+                    } else {
+                        myTxs = groupTxs;
+                        myTotal = groupTxs.reduce((sum, t) => sum + t.amount, 0);
+                        numInst = groupTxs.length;
+                    }
+                } else {
+                    if (isSplit) {
+                        myTxs = [tx.description.includes('(Minha parte)') ? tx : this.state.transactions.find(t => t.date === tx.date && t.description.startsWith(baseDesc + ' (Minha parte)'))];
+                        theirTxs = [tx.categoryId === thirdCat?.id ? tx : this.state.transactions.find(t => t.date === tx.date && t.categoryId === thirdCat?.id && t.description.startsWith(baseDesc))];
+                        myTotal = myTxs[0]?.amount || 0;
+                        theirTotal = theirTxs[0]?.amount || 0;
+                    } else {
+                        myTxs = [tx];
+                        myTotal = tx.amount;
+                    }
+                }
+
+                const totalIntegral = myTotal + theirTotal;
                 
                 const isCCExpense = tx.cardId && tx.type !== 'cc_payment';
                 const isPaidHtml = !isCCExpense ? `
@@ -1385,128 +1520,196 @@
                             Marcar como Paga
                         </label>
                     </div>
-                ` : `
-                    <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
-                        <p class="text-xs font-bold text-slate-500"><i class="ph ph-lock mr-1"></i> O status de pagamento desta compra está vinculado à fatura do cartão.</p>
-                    </div>
-                `;
-                
-                const { value: formValues } = await Swal.fire({
-                    title: 'Editar Transação',
-                    html: `
-                        <input id="swal-tx-desc" class="swal2-input" placeholder="Descrição" value="${this.escapeHTML(cleanDesc)}">
-                        <input id="swal-tx-val" type="number" step="0.01" class="swal2-input" placeholder="Valor" value="${tx.amount}">
-                        <input id="swal-tx-date" type="date" class="swal2-input" value="${tx.date}">
-                        <select id="swal-tx-type" class="swal2-select font-bold" onchange="window.updateEditSwalCat()">
+                ` : `<div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4"><p class="text-xs font-bold text-slate-500"><i class="ph ph-lock mr-1"></i> O status de pagamento desta compra está vinculado à fatura do cartão.</p></div>`;
+
+                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === tx.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+
+                let htmlContent = '';
+                if (isSplit) {
+                    htmlContent = `
+                        <div class="text-left px-2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Descrição</label>
+                            <input id="swal-split-desc" type="text" class="swal2-input !mt-0 !mb-3" value="${this.escapeHTML(baseDesc)}">
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1">Valor Integral (Total) da Compra (R$)</label>
+                            <input id="swal-split-total" type="number" step="0.01" class="swal2-input !mt-0 !mb-3" value="${totalIntegral.toFixed(2)}" oninput="
+                                const total = Number(this.value);
+                                const myValInput = document.getElementById('swal-split-my');
+                                if(myValInput && myValInput.value) {
+                                    document.getElementById('swal-split-their').value = (total - Number(myValInput.value)).toFixed(2);
+                                }
+                            ">
+
+                            <div class="flex gap-2 mb-3">
+                                <div class="flex-1">
+                                    <label class="block text-xs font-bold text-slate-500 mb-1">Sua Parte do Total</label>
+                                    <input id="swal-split-my" type="number" step="0.01" class="swal2-input !mt-0" value="${myTotal.toFixed(2)}" oninput="
+                                        const total = Number(document.getElementById('swal-split-total').value);
+                                        document.getElementById('swal-split-their').value = (total - Number(this.value)).toFixed(2);
+                                    ">
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-xs font-bold text-slate-500 mb-1">Parte (${this.escapeHTML(splitName)})</label>
+                                    <input id="swal-split-their" type="number" step="0.01" class="swal2-input !mt-0 bg-slate-100 dark:bg-slate-800" value="${theirTotal.toFixed(2)}" readonly>
+                                </div>
+                            </div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-2">Data ${isInst ? 'da Primeira Parcela' : ''}</label>
+                            <input id="swal-tx-date" type="date" class="swal2-input !mt-0" value="${isInst ? myTxs[0].date : tx.date}">
+                            <input type="hidden" id="swal-tx-type" value="${tx.type}">
+                            <input type="hidden" id="swal-tx-cat" value="${tx.categoryId}">
+                            ${!isInst ? isPaidHtml : ''}
+                        </div>
+                    `;
+                } else {
+                    htmlContent = `
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-2 text-left px-2">Descrição</label>
+                        <input id="swal-tx-desc" class="swal2-input !mt-0" placeholder="Descrição" value="${this.escapeHTML(baseDesc)}">
+                        
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Valor Integral (Total) (R$)</label>
+                        <input id="swal-tx-val" type="number" step="0.01" class="swal2-input !mt-0" placeholder="Valor" value="${myTotal.toFixed(2)}">
+                        
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Data ${isInst ? 'da Primeira Parcela' : ''}</label>
+                        <input id="swal-tx-date" type="date" class="swal2-input !mt-0" value="${isInst ? myTxs[0].date : tx.date}">
+                        
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Tipo de Transação</label>
+                        <select id="swal-tx-type" class="swal2-select !mt-0 font-bold" onchange="window.updateEditSwalCat()">
                             <option value="expense" ${tx.type === 'expense' ? 'selected' : ''}>Despesa (Saída)</option>
                             <option value="income" ${tx.type === 'income' ? 'selected' : ''}>Receita (Entrada)</option>
                         </select>
-                        <select id="swal-tx-cat" class="swal2-select">${catOpts(tx.type)}</select>
-                        ${isPaidHtml}
-                    `,
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Categoria</label>
+                        <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
+                        ${!isInst ? isPaidHtml : ''}
+                    `;
+                }
+
+                const { value: formValues } = await Swal.fire({
+                    title: `Editar Compra ${isInst ? 'Parcelada' : ''}`,
+                    html: htmlContent,
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
                     preConfirm: () => {
-                        const isPaidEl = document.getElementById('swal-tx-ispaid');
-                        return {
-                            desc: document.getElementById('swal-tx-desc').value,
-                            val: Number(document.getElementById('swal-tx-val').value),
+                        let res = {
                             date: document.getElementById('swal-tx-date').value,
                             type: document.getElementById('swal-tx-type').value,
                             cat: document.getElementById('swal-tx-cat').value,
-                            isPaid: isPaidEl ? isPaidEl.checked : tx.isPaid
+                            isPaid: document.getElementById('swal-tx-ispaid') ? document.getElementById('swal-tx-ispaid').checked : tx.isPaid
+                        };
+
+                        if (isSplit) {
+                            res.desc = document.getElementById('swal-split-desc').value;
+                            res.myTotalVal = Number(document.getElementById('swal-split-my').value);
+                            res.theirTotalVal = Number(document.getElementById('swal-split-their').value);
+                            const total = Number(document.getElementById('swal-split-total').value);
+                            if (Math.abs(total - (res.myTotalVal + res.theirTotalVal)) > 0.01) { Swal.showValidationMessage('A soma não bate com o total!'); return false; }
+                        } else {
+                            res.desc = document.getElementById('swal-tx-desc').value;
+                            res.myTotalVal = Number(document.getElementById('swal-tx-val').value);
                         }
+                        return res;
                     }
                 });
 
-                if (formValues && formValues.desc && formValues.val !== undefined) {
+                if (formValues && formValues.desc) {
                     
-                    const updateTx = (t, vals) => {
-                        const suffixMatch = t.description.match(/\(\d+\/\d+\)$/);
-                        const suffix = suffixMatch ? ` ${suffixMatch[0]}` : '';
-                        t.description = vals.desc + suffix;
-                        t.amount = vals.val; t.type = vals.type; t.categoryId = vals.cat;
-                        t.isPaid = vals.isPaid;
-                        if (t.id === tx.id) t.date = vals.date; 
-                        
-                        if (t.cardId && t.id === tx.id) {
-                            const card = this.state.cards.find(c => c.id === t.cardId);
-                            if (card) {
-                                const [y, m, d] = vals.date.split('-');
-                                let tm = parseInt(m); let ty = parseInt(y);
-                                if (parseInt(d) >= card.closingDay) { tm++; if(tm > 12) { tm = 1; ty++; } }
-                                t.invoiceMonth = `${ty}-${String(tm).padStart(2, '0')}`;
-                            }
-                        }
-                    };
+                    if (isInst) {
+                        const baseDate = formValues.date;
+                        const [y, m, d] = baseDate.split('-');
+                        let currentY = parseInt(y);
+                        let currentM = parseInt(m);
+                        const targetDay = parseInt(d);
 
-                    if (tx.installmentGroupId) {
-                        Swal.fire({
-                            title: 'Compra Parcelada',
-                            text: 'Deseja aplicar as correções (inclusive a data, que vai empurrar o resto) para TODAS as parcelas dessa compra ou SÓ NESTA parcela específica?',
-                            icon: 'question',
-                            showDenyButton: true,
-                            showCancelButton: true,
-                            confirmButtonText: 'Todas as parcelas',
-                            denyButtonText: 'Só esta',
-                            cancelButtonText: 'Cancelar',
-                            customClass: { confirmButton: 'swal2-confirm !bg-indigo-600', denyButton: 'swal2-deny !bg-slate-500' }
-                        }).then((res) => {
-                            if (res.isConfirmed) {
-                                const baseDate = formValues.date;
-                                const [y, m, d] = baseDate.split('-');
-                                let currentY = parseInt(y);
-                                let currentM = parseInt(m);
-                                const targetDay = parseInt(d);
+                        const myPerInst = formValues.myTotalVal / numInst;
+                        const theirPerInst = isSplit ? (formValues.theirTotalVal / numInst) : 0;
 
-                                let siblings = this.state.transactions.filter(t => t.installmentGroupId === tx.installmentGroupId).sort((a,b) => new Date(a.date) - new Date(b.date));
-                                const currentIndex = siblings.findIndex(t => t.id === tx.id);
+                        for (let i = 0; i < numInst; i++) {
+                            const lastDayOfMonth = new Date(currentY, currentM, 0).getDate();
+                            const day = Math.min(targetDay, lastDayOfMonth);
+                            const newDate = `${currentY}-${String(currentM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-                                currentM = currentM - currentIndex;
-                                while (currentM < 1) { currentM += 12; currentY--; }
-                                while (currentM > 12) { currentM -= 12; currentY++; }
-
-                                siblings.forEach((t, index) => {
-                                    const lastDayOfMonth = new Date(currentY, currentM, 0).getDate();
-                                    const day = Math.min(targetDay, lastDayOfMonth);
-                                    t.date = `${currentY}-${String(currentM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-
-                                    if (t.cardId) {
-                                        const card = this.state.cards.find(c => c.id === t.cardId);
-                                        if (card) {
-                                            let tm = currentM; let ty = currentY;
-                                            if (day >= card.closingDay) { tm++; if(tm>12) { tm=1; ty++; } }
-                                            t.invoiceMonth = `${ty}-${String(tm).padStart(2, '0')}`;
-                                        }
+                            if (myTxs[i]) {
+                                myTxs[i].date = newDate;
+                                myTxs[i].amount = myPerInst;
+                                myTxs[i].type = formValues.type;
+                                myTxs[i].categoryId = formValues.cat;
+                                myTxs[i].description = `${formValues.desc}${isSplit ? ' (Minha parte)' : ''} (${i+1}/${numInst})`;
+                                
+                                if (myTxs[i].cardId) {
+                                    const c = this.state.cards.find(x => x.id === myTxs[i].cardId);
+                                    if (c) {
+                                        let tm = currentM; let ty = currentY;
+                                        if (day >= c.closingDay) { tm++; if(tm>12){tm=1;ty++;} }
+                                        myTxs[i].invoiceMonth = `${ty}-${String(tm).padStart(2,'0')}`;
                                     }
-
-                                    const suffixMatch = t.description.match(/\(\d+\/\d+\)$/);
-                                    const suffix = suffixMatch ? ` ${suffixMatch[0]}` : '';
-                                    t.description = formValues.desc + suffix;
-                                    t.amount = formValues.val;
-                                    t.type = formValues.type;
-                                    t.categoryId = formValues.cat;
-                                    t.isPaid = formValues.isPaid;
-
-                                    currentM++;
-                                    if (currentM > 12) { currentM = 1; currentY++; }
-                                });
-                                this.finishEditTx(tx);
-                            } else if (res.isDenied) {
-                                updateTx(tx, formValues);
-                                this.finishEditTx(tx);
+                                }
                             }
-                        });
+
+                            if (isSplit && theirTxs[i]) {
+                                theirTxs[i].date = newDate;
+                                theirTxs[i].amount = theirPerInst;
+                                theirTxs[i].type = formValues.type;
+                                theirTxs[i].categoryId = thirdCat?.id;
+                                theirTxs[i].description = `${formValues.desc} (${splitName}) (${i+1}/${numInst})`;
+                                
+                                if (theirTxs[i].cardId) {
+                                    const c = this.state.cards.find(x => x.id === theirTxs[i].cardId);
+                                    if (c) {
+                                        let tm = currentM; let ty = currentY;
+                                        if (day >= c.closingDay) { tm++; if(tm>12){tm=1;ty++;} }
+                                        theirTxs[i].invoiceMonth = `${ty}-${String(tm).padStart(2,'0')}`;
+                                    }
+                                }
+                            }
+                            currentM++; if(currentM > 12) { currentM = 1; currentY++; }
+                        }
                     } else {
-                        if (tx.debtId) {
-                            const debt = this.state.debts.find(d => d.id === tx.debtId);
-                            if (debt) {
-                                debt.paidAmount = debt.paidAmount - tx.amount + formValues.val;
-                                if (debt.paidAmount < 0) debt.paidAmount = 0;
+                        if (myTxs[0]) {
+                            myTxs[0].date = formValues.date;
+                            myTxs[0].amount = formValues.myTotalVal;
+                            myTxs[0].type = formValues.type;
+                            myTxs[0].categoryId = formValues.cat;
+                            myTxs[0].isPaid = formValues.isPaid;
+                            myTxs[0].description = `${formValues.desc}${isSplit ? ' (Minha parte)' : ''}`;
+                            
+                            if (myTxs[0].cardId) {
+                                const c = this.state.cards.find(x => x.id === myTxs[0].cardId);
+                                if (c) {
+                                    const [cy, cm, cd] = formValues.date.split('-');
+                                    let tm = parseInt(cm); let ty = parseInt(cy);
+                                    if (parseInt(cd) >= c.closingDay) { tm++; if(tm>12){tm=1;ty++;} }
+                                    myTxs[0].invoiceMonth = `${ty}-${String(tm).padStart(2,'0')}`;
+                                }
                             }
                         }
-                        updateTx(tx, formValues);
-                        this.finishEditTx(tx);
+
+                        if (isSplit && theirTxs[0]) {
+                            theirTxs[0].date = formValues.date;
+                            theirTxs[0].amount = formValues.theirTotalVal;
+                            theirTxs[0].type = formValues.type;
+                            theirTxs[0].categoryId = thirdCat?.id;
+                            theirTxs[0].isPaid = formValues.isPaid;
+                            theirTxs[0].description = `${formValues.desc} (${splitName})`;
+                            
+                            if (theirTxs[0].cardId) {
+                                const c = this.state.cards.find(x => x.id === theirTxs[0].cardId);
+                                if (c) {
+                                    const [cy, cm, cd] = formValues.date.split('-');
+                                    let tm = parseInt(cm); let ty = parseInt(cy);
+                                    if (parseInt(cd) >= c.closingDay) { tm++; if(tm>12){tm=1;ty++;} }
+                                    theirTxs[0].invoiceMonth = `${ty}-${String(tm).padStart(2,'0')}`;
+                                }
+                            }
+                        }
                     }
+
+                    if (isSplit) {
+                        const possibleDebt = this.state.debts.find(d => d.title.includes(splitName) && d.title.includes(baseDesc));
+                        if (possibleDebt) {
+                            const diff = formValues.theirTotalVal - theirTotal;
+                            possibleDebt.totalAmount += diff; 
+                            possibleDebt.title = `Divisão: ${formValues.desc} (${splitName})`;
+                        }
+                    }
+
+                    this.finishEditTx(tx);
                 }
             },
             
@@ -1522,29 +1725,6 @@
                 } else {
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
                 }
-            },
-            
-            viewInstallments(groupId) {
-                const txs = this.state.transactions.filter(t => t.installmentGroupId === groupId).sort((a,b) => new Date(a.date) - new Date(b.date));
-                if(txs.length === 0) return;
-                let listHtml = txs.map(t => {
-                    const [y,m,d] = t.date.split('-');
-                    return `<div class="flex justify-between items-center p-3 border-b border-slate-100 dark:border-slate-700 text-sm">
-                        <span class="truncate pr-2 text-left font-bold">${this.escapeHTML(t.description)}</span>
-                        <div class="text-right flex-shrink-0">
-                            <span class="block font-black ${t.isPaid ? 'text-emerald-500' : 'text-slate-600 dark:text-slate-300'}">${this.formatCurrency(t.amount)}</span>
-                            <span class="text-[10px] font-bold text-slate-400">${d}/${m}/${y}</span>
-                        </div>
-                    </div>`;
-                }).join('');
-                
-                Swal.fire({
-                    title: 'Todas as Parcelas',
-                    html: `<div class="max-h-72 overflow-y-auto mt-2 text-slate-700 dark:text-slate-200">${listHtml}</div>`,
-                    showConfirmButton: true,
-                    confirmButtonText: 'Fechar',
-                    customClass: { confirmButton: 'swal2-confirm !bg-indigo-600' }
-                });
             },
 
             deleteTransaction(id) { 
@@ -1634,7 +1814,10 @@
                 const hidePaid = document.getElementById('list-hide-paid') ? document.getElementById('list-hide-paid').checked : false;
                 const search = document.getElementById('list-search') ? document.getElementById('list-search').value.toLowerCase() : '';
                 const catFilter = document.getElementById('list-cat-filter') ? document.getElementById('list-cat-filter').value : '';
+                const groupCC = document.getElementById('list-group-cc') ? document.getElementById('list-group-cc').checked : true;
                 
+                const openGroups = Array.from(document.querySelectorAll('[id^="inv-group-"]:not(.hidden), [id^="inst-group-"]:not(.hidden)')).map(el => el.id);
+
                 const tbody = document.getElementById('tx-table-body'); tbody.innerHTML = '';
                 
                 let filtered = this.state.transactions;
@@ -1646,14 +1829,14 @@
                 
                 if (filtered.length === 0) { tbody.innerHTML = `<div class="p-6 text-center text-slate-500 font-bold text-sm">Nenhum registro encontrado.</div>`; return; }
 
-                const generateTxRow = (tx, isSubItem = false) => {
+                const generateTxRow = (tx, isSubItem = false, isAccordion = false) => {
                     const cat = this.state.categories.find(c => c.id === tx.categoryId); 
                     const isInc = tx.type === 'income'; 
                     const [y,m,d] = tx.date.split('-');
                     let iconHtml = `<div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>`;
                     let cardBadge = '';
-                    
                     let cardColor = '#cbd5e1';
+                    
                     if (tx.cardId) {
                         const card = this.state.cards.find(c => c.id === tx.cardId);
                         if (card) {
@@ -1661,8 +1844,66 @@
                             cardBadge = `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-slate-800 dark:bg-slate-700 uppercase" style="border-left: 2px solid ${card.color}">${this.escapeHTML(card.name)}</span>`;
                         }
                     }
-                    if (tx.type === 'cc_payment') {
-                        iconHtml = `<div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center text-lg flex-shrink-0 border border-indigo-100 dark:border-indigo-800"><i class="ph ph-receipt"></i></div>`;
+                    if (tx.type === 'cc_payment') { iconHtml = `<div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center text-lg flex-shrink-0 border border-indigo-100 dark:border-indigo-800"><i class="ph ph-receipt"></i></div>`; }
+
+                    if (isAccordion && tx.installmentGroupId) {
+                        let allTxs = this.state.transactions.filter(t => t.installmentGroupId === tx.installmentGroupId).sort((a,b) => new Date(a.date) - new Date(b.date));
+                        let subItemsHtml = allTxs.map((subTx) => {
+                            const [sy,sm,sd] = subTx.date.split('-');
+                            let subAction = '';
+                            if(subTx.cardId && subTx.type !== 'cc_payment') {
+                                subAction = `<div class="w-7 h-7 flex items-center justify-center rounded-full ${subTx.isPaid ? 'text-emerald-500' : 'text-slate-400'}"><i class="ph ${subTx.isPaid ? 'ph-check-circle' : 'ph-lock'} text-lg"></i></div>`;
+                            } else {
+                                subAction = `<button onclick="app.togglePaid('${subTx.id}')" class="w-7 h-7 flex items-center justify-center rounded-full ${subTx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 dark:bg-slate-900/50'}"><i class="ph ph-check-circle text-lg"></i></button>`;
+                            }
+
+                            return `<div class="flex justify-between items-center p-3 border-b border-slate-100/50 dark:border-slate-700/50 text-sm pl-16 bg-slate-50/30 dark:bg-slate-800/30">
+                                <span class="truncate pr-2 font-bold text-slate-600 dark:text-slate-300 ${subTx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(subTx.description)}</span>
+                                <div class="flex items-center gap-3 flex-shrink-0">
+                                    <div class="text-right">
+                                        <span class="block font-black ${subTx.isPaid ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}">${this.formatCurrency(subTx.amount)}</span>
+                                        <span class="text-[10px] font-bold text-slate-400">${sd}/${sm}/${sy}</span>
+                                    </div>
+                                    <div class="flex gap-1">
+                                        ${subAction}
+                                    </div>
+                                </div>
+                            </div>`;
+                        }).join('');
+
+                        let paidActionHtml = '';
+                        if (tx.cardId && tx.type !== 'cc_payment') {
+                            paidActionHtml = `<div class="w-8 h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-300 dark:text-slate-600'} flex-shrink-0" title="Pago junto com a fatura"><i class="ph ${tx.isPaid ? 'ph-check-circle' : 'ph-lock'} text-lg"></i></div>`;
+                        } else {
+                            paidActionHtml = `<button onclick="app.togglePaid('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800'} active:scale-95 flex-shrink-0 transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-lg"></i></button>`;
+                        }
+
+                        return `
+                            <div class="w-full flex flex-col transition-colors ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800'} border-b border-slate-100 dark:border-slate-700/50" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
+                                <div onclick="document.getElementById('inst-group-${tx.id}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex items-center justify-between p-4 cursor-pointer w-full group gap-3">
+                                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                                        <div class="w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 text-white shadow-sm bg-amber-500"><i class="ph ph-list-numbers"></i></div>
+                                        <div class="flex flex-col min-w-0 flex-1">
+                                            <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ${tx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(tx.description)}</span>
+                                            <div class="flex items-center gap-2 mt-0.5 w-full">
+                                                <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate ${tx.isPaid ? 'opacity-50' : ''}">${d}/${m}/${y} • (Clique para expandir o histórico)</span>
+                                                ${!isSubItem ? cardBadge : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                                        <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right pr-2 ${isInc ? 'text-emerald-500' : 'text-rose-500'} ${tx.isPaid ? 'opacity-50' : ''}">${isInc ? '+' : '-'} ${this.formatCurrency(tx.amount)}</span>
+                                        ${paidActionHtml}
+                                        <button onclick="event.stopPropagation(); app.editTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                        <button onclick="event.stopPropagation(); app.deleteTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-trash text-lg"></i></button>
+                                        <div class="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-700/50 flex items-center justify-center text-slate-400 transition-colors"><i class="ph ph-caret-down transition-transform duration-300"></i></div>
+                                    </div>
+                                </div>
+                                <div id="inst-group-${tx.id}" class="hidden flex-col w-full divide-y divide-slate-100/50 dark:divide-slate-700/30 border-t border-slate-100 dark:border-slate-700/50">
+                                    ${subItemsHtml}
+                                </div>
+                            </div>
+                        `;
                     }
 
                     let paidActionHtml = '';
@@ -1673,7 +1914,7 @@
                     }
 
                     return `
-                        <div class="flex items-center justify-between p-4 ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 dark:hover:bg-slate-800/60 pl-8 md:pl-12 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80'} transition-colors gap-3 w-full" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
+                        <div class="flex items-center justify-between p-4 ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 dark:hover:bg-slate-800/60 pl-8 md:pl-12 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700/50'} transition-colors gap-3 w-full" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
                             <div class="flex items-center gap-3 flex-1 min-w-0">
                                 ${iconHtml}
                                 <div class="flex flex-col min-w-0 flex-1">
@@ -1687,7 +1928,6 @@
                             <div class="flex items-center gap-1.5 flex-shrink-0">
                                 <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right pr-2 ${isInc ? 'text-emerald-500' : 'text-rose-500'} ${tx.isPaid ? 'opacity-50' : ''}">${isInc ? '+' : '-'} ${this.formatCurrency(tx.amount)}</span>
                                 ${paidActionHtml}
-                                ${tx.installmentGroupId ? `<button onclick="app.viewInstallments('${tx.installmentGroupId}')" class="w-8 h-8 flex items-center justify-center rounded-full text-amber-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors" title="Ver parcelas"><i class="ph ph-list-numbers text-lg"></i></button>` : ''}
                                 <button onclick="app.editTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-pencil-simple text-lg"></i></button>
                                 <button onclick="app.deleteTransaction('${tx.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 dark:hover:bg-slate-800 active:scale-95 flex-shrink-0 transition-colors"><i class="ph ph-trash text-lg"></i></button>
                             </div>
@@ -1701,44 +1941,42 @@
                 filtered.sort((a,b) => new Date(b.date) - new Date(a.date));
 
                 filtered.forEach(tx => {
-                    if (tx.cardId && tx.type !== 'cc_payment' && tx.invoiceMonth) {
+                    if (groupCC && tx.cardId && tx.type !== 'cc_payment' && tx.invoiceMonth) {
                         let key = `${tx.cardId}_${tx.invoiceMonth}`;
                         if (!invoiceMap[key]) {
-                            invoiceMap[key] = {
-                                isGroup: true,
-                                key: key,
-                                cardId: tx.cardId,
-                                invoiceMonth: tx.invoiceMonth,
-                                items: [],
-                                total: 0,
-                                allPaid: true,
-                                sortDate: tx.date
-                            };
+                            invoiceMap[key] = { isGroup: true, key: key, cardId: tx.cardId, invoiceMonth: tx.invoiceMonth, items: [], total: 0, allPaid: true, sortDate: tx.date };
                             displayList.push(invoiceMap[key]);
                         }
                         invoiceMap[key].items.push(tx);
                         invoiceMap[key].total += Number(tx.amount);
                         if (!tx.isPaid) invoiceMap[key].allPaid = false;
-                        if (new Date(tx.date) > new Date(invoiceMap[key].sortDate)) {
-                            invoiceMap[key].sortDate = tx.date;
-                        }
+                        if (new Date(tx.date) > new Date(invoiceMap[key].sortDate)) { invoiceMap[key].sortDate = tx.date; }
                     } else {
                         displayList.push(tx);
                     }
                 });
 
-                displayList.sort((a, b) => {
-                    let dateA = a.isGroup ? a.sortDate : a.date;
-                    let dateB = b.isGroup ? b.sortDate : b.date;
-                    return new Date(dateB) - new Date(dateA);
-                });
+                displayList.sort((a, b) => new Date(b.isGroup ? b.sortDate : b.date) - new Date(a.isGroup ? a.sortDate : a.date));
 
                 let finalHtml = '';
+                let renderedInstGroups = new Set();
+
                 displayList.forEach(item => {
                     if (item.isGroup) {
                         const card = this.state.cards.find(c => c.id === item.cardId) || { name: 'Cartão Apagado', color: '#6366f1' };
                         const [y, m] = item.invoiceMonth.split('-');
-                        const txsHtml = item.items.map(t => generateTxRow(t, true)).join('');
+                        let txsHtml = '';
+
+                        item.items.forEach(t => {
+                            if (t.installmentGroupId) {
+                                if (!renderedInstGroups.has(t.installmentGroupId)) {
+                                    renderedInstGroups.add(t.installmentGroupId);
+                                    txsHtml += generateTxRow(t, true, true);
+                                }
+                            } else {
+                                txsHtml += generateTxRow(t, true, false);
+                            }
+                        });
                         
                         finalHtml += `
                             <div class="w-full flex flex-col bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700/50">
@@ -1749,7 +1987,7 @@
                                         </div>
                                         <div class="flex flex-col min-w-0 flex-1">
                                             <span class="font-black text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Fatura ${this.escapeHTML(card.name)}</span>
-                                            <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate">Vencimento: ${m}/${y} • ${item.items.length} compra(s)</span>
+                                            <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate">Vencimento: ${m}/${y}</span>
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3 flex-shrink-0">
@@ -1768,11 +2006,30 @@
                             </div>
                         `;
                     } else {
-                        finalHtml += generateTxRow(item, false);
+                        if (item.installmentGroupId) {
+                            if (!renderedInstGroups.has(item.installmentGroupId)) {
+                                renderedInstGroups.add(item.installmentGroupId);
+                                finalHtml += generateTxRow(item, false, true);
+                            }
+                        } else {
+                            finalHtml += generateTxRow(item, false, false);
+                        }
                     }
                 });
                 
                 tbody.innerHTML = finalHtml;
+
+                openGroups.forEach(id => {
+                    const el = document.getElementById(id);
+                    if(el) {
+                        el.classList.remove('hidden');
+                        const toggleBtn = el.previousElementSibling;
+                        if(toggleBtn) {
+                            const icon = toggleBtn.querySelector('.ph-caret-down');
+                            if(icon) icon.classList.add('rotate-180');
+                        }
+                    }
+                });
             },
 
             async newDebt() {
@@ -1949,7 +2206,7 @@
                         title: formValues.title, 
                         targetAmount: formValues.targetAmount, 
                         savedAmount: formValues.initAmount,
-                        appSavedAmount: 0 // <--- Valor iniciado não desconta do Saldo Livre
+                        appSavedAmount: 0 
                     }); 
                     this.saveData(); this.renderGoals(); 
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
@@ -1960,7 +2217,7 @@
                 const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${this.escapeHTML(goal.title)}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
                 if (amount) { 
                     goal.savedAmount += Number(amount); 
-                    goal.appSavedAmount = (goal.appSavedAmount || 0) + Number(amount); // Aqui desconta do Saldo Livre!
+                    goal.appSavedAmount = (goal.appSavedAmount || 0) + Number(amount); 
                     this.saveData(); this.renderGoals(); 
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); 
@@ -2431,15 +2688,15 @@
             
             clearAllData() { 
                 Swal.fire({ 
-                    title: 'Apagar Esta Conta?', 
-                    text: 'Isso vai apagar TODOS os dados (transações, categorias, etc) APENAS da conta que está aberta agora. Digite APAGAR abaixo:', 
+                    title: 'Apagar Conta?', 
+                    text: 'Isso vai limpar os dados da conta atual. Digite CONFIRMAR:', 
                     input: 'text', 
-                    icon: 'error', 
+                    icon: 'warning', 
                     showCancelButton: true, 
-                    confirmButtonText: 'Confirmar Exclusão', 
+                    confirmButtonText: 'Sim, limpar', 
                     cancelButtonText: 'Cancelar' 
                 }).then((res) => { 
-                    if (res.value === 'APAGAR') { 
+                    if (res.value === 'CONFIRMAR') { 
                         localStorage.removeItem(`${this.prefix}transactions`);
                         localStorage.removeItem(`${this.prefix}categories`);
                         localStorage.removeItem(`${this.prefix}recurring`);
@@ -2453,16 +2710,6 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => { app.init(); });
-    </script>
-
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js')
-                    .then(registration => { console.log('Modo Offline ativado com sucesso!', registration.scope); })
-                    .catch(error => { console.log('Falha ao ativar o modo offline:', error); });
-            });
-        }
     </script>
 </body>
 </html>
