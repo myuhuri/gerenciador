@@ -251,13 +251,13 @@
                 <div class="p-4 md:p-6 border-b border-slate-100 dark:border-slate-700/60 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-slate-50/50 dark:bg-slate-800/80">
                     <h3 class="font-black text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Extrato</h3>
                     <div class="flex flex-col gap-3 w-full xl:w-auto">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-3 w-full">
-                            <input type="text" id="list-search" class="date-pill !px-4 !py-2.5 w-full lg:w-40 !font-normal" placeholder="Buscar texto..." oninput="app.renderTransactions()">
-                            <select id="list-cat-filter" class="date-pill !px-4 !py-2.5 w-full lg:w-40 !font-normal" onchange="app.renderTransactions()">
+                        <div class="flex flex-col lg:flex-row gap-3 w-full">
+                            <input type="text" id="list-search" class="date-pill !px-4 !py-2.5 flex-1 !font-normal" placeholder="Buscar texto..." oninput="app.renderTransactions()">
+                            <select id="list-cat-filter" class="date-pill !px-4 !py-2.5 flex-1 lg:flex-none lg:w-40 !font-normal" onchange="app.renderTransactions()">
                                 <option value="">Todas Categorias</option>
                             </select>
                             <div class="flex w-full lg:w-auto items-center gap-2">
-                                <input type="month" id="list-month-filter" class="date-pill !px-4 !py-2.5 w-full" onchange="app.renderTransactions()">
+                                <input type="month" id="list-month-filter" class="date-pill !px-4 !py-2.5 flex-1" onchange="app.renderTransactions()">
                                 <button onclick="document.getElementById('list-month-filter').value=''; app.renderTransactions()" class="date-pill !px-4 !py-2.5 !bg-indigo-50 !border-indigo-100 dark:!bg-indigo-900/30 dark:!border-indigo-800 !text-indigo-600 dark:!text-indigo-400 hover:!bg-indigo-100 transition-colors flex-shrink-0" title="Limpar mês e ver todas">
                                     Todas
                                 </button>
@@ -387,8 +387,7 @@
             </div>
         </section>
     </main>
-
-<script>
+    <script>
         const bankDatalist = `
             <datalist id="bank-list">
                 <option value="Nubank"></option>
@@ -442,10 +441,12 @@
         window.updateEditSwalCat = function() {
             const type = document.getElementById('swal-tx-type').value;
             const select = document.getElementById('swal-tx-cat');
-            select.innerHTML = '';
-            app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
-                select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
-            });
+            if (select) {
+                select.innerHTML = '';
+                app.state.categories.filter(c => c.type === type || c.type === 'both').forEach(cat => {
+                    select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
+                });
+            }
         };
 
         window.addSplitFriend = function(existingName = '', existingVal = '', existingPaid = '0') {
@@ -463,11 +464,19 @@
                 paidOpts += `<option value="1" ${existingPaid >= '1' ? 'selected': ''}>Já pagou</option>`;
             }
 
+            let datalist = document.getElementById('friends-datalist');
+            if(!datalist) {
+                datalist = document.createElement('datalist');
+                datalist.id = 'friends-datalist';
+                document.body.appendChild(datalist);
+            }
+            datalist.innerHTML = (window.app ? app.state.friends : []).map(f => `<option value="${f}"></option>`).join('');
+
             const div = document.createElement('div');
             div.className = "split-friend-item flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 relative";
             div.innerHTML = `
                 <button type="button" onclick="this.parentElement.remove(); window.calcSplit()" class="absolute top-1 right-2 text-red-500 font-black text-lg p-1">&times;</button>
-                <input type="text" class="swal2-input !mt-0 !text-sm friend-name w-[85%]" placeholder="Nome da pessoa" value="${existingName}">
+                <input type="text" list="friends-datalist" class="swal2-input !mt-0 !text-sm friend-name w-[85%]" placeholder="Nome da pessoa" value="${existingName}">
                 <div class="flex flex-row gap-2 w-full mt-1">
                     <div class="w-1/2">
                         <label class="text-[9px] font-bold text-slate-500 ml-1">Valor (R$)</label>
@@ -520,7 +529,7 @@
         };
 
         const app = {
-            state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], cards: [], theme: 'light' },
+            state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], cards: [], friends: [], theme: 'light' },
             profiles: [],
             activeProfileId: 'default',
             prefix: 'gf_',
@@ -564,6 +573,7 @@
                 this.state.debts = parse('debts', []);
                 this.state.goals = parse('goals', []); 
                 this.state.cards = parse('cards', []); 
+                this.state.friends = parse('friends', []); 
                 
                 this.state.theme = localStorage.getItem('gf_theme') || 'light';
                 
@@ -592,8 +602,9 @@
                 save('categories', this.state.categories);
                 save('recurring', this.state.recurring);
                 save('debts', this.state.debts);
-                save('goals', this.state.cards);
+                save('goals', this.state.goals);
                 save('cards', this.state.cards);
+                save('friends', this.state.friends);
                 
                 localStorage.setItem('gf_theme', this.state.theme);
                 this.updateStatusIcon();
@@ -676,6 +687,7 @@
                             localStorage.removeItem(`${p.prefix}debts`);
                             localStorage.removeItem(`${p.prefix}goals`);
                             localStorage.removeItem(`${p.prefix}cards`);
+                            localStorage.removeItem(`${p.prefix}friends`);
                         }
                         this.profiles = this.profiles.filter(x => x.id !== id);
                         localStorage.setItem('konta_profiles', JSON.stringify(this.profiles));
@@ -745,25 +757,53 @@
                 const now = new Date(); 
                 const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; 
                 const todayNum = now.getDate(); 
-                
                 const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
                 
                 let added = false;
                 this.state.recurring.forEach(rec => {
                     const targetDay = Math.min(rec.day, lastDayOfMonth);
                     if (rec.lastProcessedMonth !== currentMonthKey && todayNum >= targetDay) {
-                        this.state.transactions.push({ 
-                            id: this.generateId(), 
-                            recurringId: rec.id,
-                            description: rec.description, 
-                            amount: rec.amount, 
-                            date: `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`, 
-                            type: rec.type, 
-                            categoryId: rec.categoryId, 
-                            isRecurringAuto: true,
-                            isPaid: false
-                        });
-                        rec.lastProcessedMonth = currentMonthKey; added = true;
+                        
+                        const dateStr = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
+
+                        if (rec.isSplit && rec.type === 'expense') {
+                            let thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
+                            if (!thirdCat) {
+                                thirdCat = { id: this.generateId(), name: 'Compra de Terceiros', icon: '🤝', type: 'expense', budgetLimit: 0 };
+                                this.state.categories.push(thirdCat);
+                            }
+
+                            rec.friends.forEach(f => {
+                                let did = this.generateId();
+                                this.state.debts.push({
+                                    id: did, type: 'owes_me', title: `Divisão: ${rec.description} (${f.name})`,
+                                    totalAmount: f.val, paidAmount: 0
+                                });
+
+                                this.state.transactions.push({ 
+                                    id: this.generateId(), recurringId: rec.id, description: rec.description + ` (${f.name})`, 
+                                    amount: f.val, date: dateStr, type: rec.type, categoryId: thirdCat.id, 
+                                    isRecurringAuto: true, isPaid: false, splitName: f.name, friendHasPaid: false, debtId: did
+                                }); 
+                            });
+
+                            if (rec.myVal > 0) {
+                                this.state.transactions.push({ 
+                                    id: this.generateId(), recurringId: rec.id, description: rec.description + " (Minha parte)", 
+                                    amount: rec.myVal, date: dateStr, type: rec.type, categoryId: rec.categoryId, 
+                                    isRecurringAuto: true, isPaid: false 
+                                });
+                            }
+                        } else {
+                            this.state.transactions.push({ 
+                                id: this.generateId(), recurringId: rec.id, description: rec.description, 
+                                amount: rec.amount, date: dateStr, type: rec.type, categoryId: rec.categoryId, 
+                                isRecurringAuto: true, isPaid: false
+                            });
+                        }
+
+                        rec.lastProcessedMonth = currentMonthKey; 
+                        added = true;
                     }
                 });
                 if (added) { this.saveData(); Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'Contas fixas lançadas!', showConfirmButton: false, timer: 3000 }); }
@@ -847,11 +887,12 @@
                     fixedDiv.innerHTML = '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhuma despesa fixa cadastrada.</div>';
                 } else {
                     fixedExpenses.forEach(r => {
-                        totalFixed += Number(r.amount);
+                        const displayAmt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
+                        totalFixed += Number(displayAmt);
                         const cat = this.state.categories.find(c => c.id === r.categoryId);
-                        fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl w-full mb-2"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-sm shadow-sm border border-slate-100 dark:border-slate-700/50">${cat ? cat.icon : '💸'}</div><span class="font-bold text-slate-700 dark:text-slate-200 text-sm">${this.escapeHTML(r.description)}</span></div><span class="font-black text-rose-500">${this.formatCurrency(r.amount)}</span></div>`;
+                        fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl w-full mb-2"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-sm shadow-sm border border-slate-100 dark:border-slate-700/50">${cat ? cat.icon : '💸'}</div><span class="font-bold text-slate-700 dark:text-slate-200 text-sm">${this.escapeHTML(r.description)}${r.isSplit ? ' (Sua parte)' : ''}</span></div><span class="font-black text-rose-500">${this.formatCurrency(displayAmt)}</span></div>`;
                     });
-                    fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 mt-2 border-t border-slate-200 dark:border-slate-700 w-full"><span class="font-black text-slate-800 dark:text-slate-200 text-sm">Total Fixo:</span><span class="font-black text-rose-500">${this.formatCurrency(totalFixed)}</span></div>`;
+                    fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 mt-2 border-t border-slate-200 dark:border-slate-700 w-full"><span class="font-black text-slate-800 dark:text-slate-200 text-sm">Total Fixo (Sua parte):</span><span class="font-black text-rose-500">${this.formatCurrency(totalFixed)}</span></div>`;
                 }
 
                 this.renderChart(expensesByCat);
@@ -876,7 +917,11 @@
                         }
                     });
 
-                    const fixedCosts = this.state.recurring.filter(r => r.type === 'expense').reduce((acc, r) => acc + Number(r.amount), 0);
+                    const fixedCosts = this.state.recurring.filter(r => r.type === 'expense').reduce((acc, r) => {
+                        const amt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
+                        return acc + Number(amt);
+                    }, 0);
+                    
                     const ccTotal = Object.values(cardTotals).reduce((a,b) => a+b, 0);
                     
                     let ccHtml = '';
@@ -893,7 +938,7 @@
                                 ${ccHtml || '<p class="text-sm text-emerald-500 font-bold mt-1">Nenhuma fatura pendente</p>'}
                             </div>
                             <div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700">
-                                <span class="text-slate-500 font-bold">Despesas Fixas Estimadas</span>
+                                <span class="text-slate-500 font-bold">Despesas Fixas (Sua parte)</span>
                                 <span class="font-bold text-rose-500">${this.formatCurrency(fixedCosts)}</span>
                             </div>
                             <div class="mt-4 flex justify-between bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
@@ -952,7 +997,8 @@
                             const processedButDeleted = r.lastProcessedMonth && (r.lastProcessedMonth >= monthKey) && !alreadyGenerated;
                             
                             if (alreadyGenerated || processedButDeleted) return acc;
-                            return acc + Number(r.amount);
+                            const amt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
+                            return acc + Number(amt);
                         }, 0);
 
                     data.push(txSum + recSum);
@@ -1521,11 +1567,13 @@
                             isSplit = document.getElementById('swal-tx-split').checked;
                             if (isSplit) {
                                 document.querySelectorAll('.split-friend-item').forEach(div => {
+                                    let fName = div.querySelector('.friend-name').value;
                                     friends.push({
-                                        name: div.querySelector('.friend-name').value,
+                                        name: fName,
                                         val: Number(div.querySelector('.friend-val').value),
                                         paidCount: Number(div.querySelector('.friend-paid').value)
                                     });
+                                    if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                                 });
                                 let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
                                 myVal = Number(val) - friendsTotal;
@@ -1828,8 +1876,10 @@
                                 </div>
                             </div>
                             
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Categoria da Sua Parte</label>
+                            <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
+
                             <input type="hidden" id="swal-tx-type" value="${tx.type}">
-                            <input type="hidden" id="swal-tx-cat" value="${tx.categoryId}">
                             <input type="hidden" id="swal-tx-is-installment" value="${isInst ? 'on' : ''}">
                             <input type="hidden" id="swal-installments-count" value="${numInst}">
                             ${!isInst ? isPaidHtml : ''}
@@ -1884,11 +1934,13 @@
                             
                             res.friends = [];
                             document.querySelectorAll('.split-friend-item').forEach(div => {
+                                let fName = div.querySelector('.friend-name').value;
                                 res.friends.push({
-                                    name: div.querySelector('.friend-name').value,
+                                    name: fName,
                                     val: Number(div.querySelector('.friend-val').value),
                                     paidCount: Number(div.querySelector('.friend-paid').value)
                                 });
+                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                             });
                             
                             let friendsTotal = res.friends.reduce((sum, f) => sum + f.val, 0);
@@ -1934,12 +1986,6 @@
                                 }
                             }
 
-                            if (isSplit && formValues.friends) {
-                                // For edit, it's safer to remove old theirTxs and push new ones if friend names/counts changed.
-                                // Simplification: we'll match by index if names haven't drastically changed, or we just overwrite existing in order.
-                                // A perfect approach drops old and reconstructs, but we'll adapt existing if possible.
-                            }
-                            currentM++; if(currentM > 12) { currentM = 1; currentY++; }
                         }
                         
                         // Handle friends full refresh for safety in edit
@@ -2075,15 +2121,17 @@
                         if (res.isConfirmed) {
                             this.executeDeleteTx(id);
                         } else if (res.isDenied) {
-                            this.state.transactions = this.state.transactions.filter(t => 
-                                !(t.installmentGroupId === tx.installmentGroupId && t.date >= tx.date)
+                            const txsToDelete = this.state.transactions.filter(t => 
+                                (t.installmentGroupId === tx.installmentGroupId && t.date >= tx.date)
                             );
+                            txsToDelete.forEach(tDel => this.executeDeleteTx(tDel.id, false)); 
+                            
                             this.saveData(); 
                             this.renderTransactions(); 
                             if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                             if(document.getElementById('cards').classList.contains('active')) this.renderCards();
                             if(document.getElementById('friends').classList.contains('active')) this.renderFriends();
-                            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Apagado!', showConfirmButton: false, timer: 1500 });
+                            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Parcelas Apagadas!', showConfirmButton: false, timer: 1500 });
                         }
                     });
                 } else {
@@ -2100,30 +2148,46 @@
                 }
             },
             
-            executeDeleteTx(id) {
+            executeDeleteTx(id, shouldRender = true) {
                 const tx = this.state.transactions.find(t => t.id === id);
-                if (tx && tx.debtId) {
+                if (!tx) return;
+
+                if (tx.debtId) {
                     const debt = this.state.debts.find(d => d.id === tx.debtId);
                     if (debt) {
-                        debt.paidAmount -= tx.amount;
-                        if (debt.paidAmount < 0) debt.paidAmount = 0;
+                        const cat = this.state.categories.find(c => c.id === tx.categoryId);
+                        const isPayment = cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
+                        
+                        if (isPayment) {
+                            debt.paidAmount -= tx.amount;
+                            if (debt.paidAmount < 0) debt.paidAmount = 0;
+                        } else {
+                            debt.totalAmount -= tx.amount;
+                            if (debt.totalAmount <= 0.01) {
+                                this.state.debts = this.state.debts.filter(d => d.id !== tx.debtId);
+                                this.state.transactions = this.state.transactions.filter(t => t.debtId !== tx.debtId && t.id !== id);
+                            }
+                        }
                     }
                 }
                 
-                if (tx && tx.type === 'cc_payment') {
+                if (tx.type === 'cc_payment') {
                     const related = this.state.transactions.filter(t => t.cardId === tx.paidCardId && t.invoiceMonth === tx.paidInvoiceMonth);
                     related.forEach(t => t.isPaid = false);
                     this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id);
                 }
 
                 this.state.transactions = this.state.transactions.filter(t => t.id !== id); 
-                this.saveData(); 
-                this.renderTransactions(); 
-                if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); 
-                if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
-                if(document.getElementById('cards').classList.contains('active')) this.renderCards();
-                if(document.getElementById('friends').classList.contains('active')) this.renderFriends();
-                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Apagado!', showConfirmButton: false, timer: 1500 });
+                
+                if (shouldRender) {
+                    this.saveData(); 
+                    this.renderTransactions(); 
+                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard(); 
+                    if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
+                    if(document.getElementById('cards').classList.contains('active')) this.renderCards();
+                    if(document.getElementById('friends').classList.contains('active')) this.renderFriends();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Apagado!', showConfirmButton: false, timer: 1500 });
+                }
             },
 
             renderTransactions() {
@@ -2373,7 +2437,50 @@
                         } 
                     } 
                 });
+
                 if (formValues && formValues.title && formValues.totalAmount) { 
+                    const oppositeType = formValues.type === 'i_owe' ? 'owes_me' : 'i_owe';
+                    const searchTitle = formValues.title.toLowerCase().trim();
+                    
+                    const existingOpposite = this.state.debts.find(d => 
+                        d.type === oppositeType && 
+                        d.title.toLowerCase().trim() === searchTitle && 
+                        (d.totalAmount - d.paidAmount) > 0
+                    );
+
+                    if (existingOpposite) {
+                        const oppRemaining = existingOpposite.totalAmount - existingOpposite.paidAmount;
+                        const actionText = formValues.type === 'i_owe' ? 'a pagar' : 'a receber';
+                        
+                        const res = await Swal.fire({
+                            title: 'Dívida Cruzada',
+                            text: `Você está adicionando uma dívida ${actionText} de ${this.formatCurrency(formValues.totalAmount)} para "${formValues.title}". Mas já existe uma dívida oposta com saldo de ${this.formatCurrency(oppRemaining)}. Deseja abater os valores?`,
+                            icon: 'question',
+                            showCancelButton: true,
+                            confirmButtonText: 'Sim, subtrair',
+                            cancelButtonText: 'Não, manter separadas'
+                        });
+
+                        if (res.isConfirmed) {
+                            if (formValues.totalAmount === oppRemaining) {
+                                existingOpposite.paidAmount = existingOpposite.totalAmount;
+                                Swal.fire('Quitadas!', 'Os valores se anularam.', 'success');
+                            } else if (formValues.totalAmount > oppRemaining) {
+                                existingOpposite.paidAmount = existingOpposite.totalAmount;
+                                formValues.totalAmount -= oppRemaining;
+                                this.state.debts.push({ 
+                                    id: this.generateId(), type: formValues.type, title: formValues.title, totalAmount: formValues.totalAmount, paidAmount: 0 
+                                });
+                                Swal.fire('Abatido!', `A dívida antiga zerou e a nova ficou em ${this.formatCurrency(formValues.totalAmount)}.`, 'success');
+                            } else {
+                                existingOpposite.paidAmount += formValues.totalAmount;
+                                Swal.fire('Abatido!', `O valor diminuiu a dívida antiga, restando ${this.formatCurrency(existingOpposite.totalAmount - existingOpposite.paidAmount)}.`, 'success');
+                            }
+                            this.saveData(); this.renderDebts();
+                            return;
+                        }
+                    }
+
                     this.state.debts.push({ 
                         id: this.generateId(), 
                         type: formValues.type,
@@ -2384,17 +2491,35 @@
                     this.saveData(); this.renderDebts(); 
                 }
             },
+            
             async payDebt(id) {
-                const debt = this.state.debts.find(d => d.id === id); const remaining = debt.totalAmount - debt.paidAmount;
-                const { value: amount } = await Swal.fire({ 
+                const debt = this.state.debts.find(d => d.id === id); 
+                const remaining = debt.totalAmount - debt.paidAmount;
+                const today = new Date().toISOString().split('T')[0];
+                
+                const { value: formValues } = await Swal.fire({ 
                     title: debt.type === 'owes_me' ? 'Receber Valor' : 'Amortizar', 
-                    html: `<p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${this.escapeHTML(debt.title)}</p><p class="text-sm">Resta: ${this.formatCurrency(remaining)}</p>`, 
-                    input: 'number', inputPlaceholder: 'Valor', showCancelButton: true, confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar', 
-                    inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; if (val > remaining) return 'Valor excede a dívida!'; } 
+                    html: `
+                        <p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${this.escapeHTML(debt.title)}</p>
+                        <p class="text-sm mb-4">Resta: ${this.formatCurrency(remaining)}</p>
+                        <label class="block text-xs font-bold text-slate-500 text-left px-2">Valor Pago/Recebido (R$)</label>
+                        <input id="debt-pay-val" type="number" step="0.01" class="swal2-input !mt-0 mb-3" value="${remaining}">
+                        <label class="block text-xs font-bold text-slate-500 text-left px-2">Data do Pagamento</label>
+                        <input id="debt-pay-date" type="date" class="swal2-input !mt-0" value="${today}">
+                    `, 
+                    showCancelButton: true, confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => {
+                        const val = Number(document.getElementById('debt-pay-val').value);
+                        const date = document.getElementById('debt-pay-date').value;
+                        if (!val || val <= 0) { Swal.showValidationMessage('Insira um valor!'); return false; }
+                        if (val > remaining) { Swal.showValidationMessage('Valor excede a dívida!'); return false; }
+                        if (!date) { Swal.showValidationMessage('Insira a data!'); return false; }
+                        return { val, date };
+                    } 
                 });
                 
-                if (amount) {
-                    debt.paidAmount += Number(amount);
+                if (formValues) {
+                    debt.paidAmount += formValues.val;
                     const isOwesMe = debt.type === 'owes_me';
                     const txType = isOwesMe ? 'income' : 'expense';
                     const catName = isOwesMe ? 'Recebimento de Dívida' : 'Pagamento de Dívida';
@@ -2409,8 +2534,8 @@
                         id: this.generateId(), 
                         debtId: debt.id,
                         description: `${isOwesMe ? 'Recebimento de' : 'Pag. Dívida'}: ${debt.title}`, 
-                        amount: Number(amount), 
-                        date: new Date().toISOString().split('T')[0], 
+                        amount: formValues.val, 
+                        date: formValues.date, 
                         type: txType, 
                         categoryId: cat.id,
                         isPaid: true
@@ -2420,12 +2545,13 @@
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                     
                     if (txType === 'expense') {
-                        this.checkBudgetAndNotify(cat.id, new Date().toISOString().split('T')[0]);
+                        this.checkBudgetAndNotify(cat.id, formValues.date);
                     } else {
                         Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Registrado!', showConfirmButton: false, timer: 2000 });
                     }
                 }
             },
+
             async editDebt(id) {
                 const debt = this.state.debts.find(d => d.id === id); if (!debt) return;
                 const { value: formValues } = await Swal.fire({ 
@@ -2467,7 +2593,31 @@
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 }); 
                 }
             },
-            deleteDebt(id) { Swal.fire({ title: 'Apagar?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Sim', cancelButtonText: 'Cancelar' }).then((res) => { if(res.isConfirmed){ this.state.debts = this.state.debts.filter(d => d.id !== id); this.saveData(); this.renderDebts(); } }); },
+            deleteDebt(id) { 
+                Swal.fire({ 
+                    title: 'Apagar Dívida?', 
+                    text: 'Isso também apagará do extrato as compras e os pagamentos vinculados a esta dívida. Continuar?', 
+                    icon: 'warning', 
+                    showCancelButton: true, 
+                    confirmButtonText: 'Sim, apagar tudo', 
+                    cancelButtonText: 'Cancelar',
+                    customClass: { confirmButton: 'swal2-confirm !bg-red-500' }
+                }).then((res) => { 
+                    if(res.isConfirmed){ 
+                        this.state.debts = this.state.debts.filter(d => d.id !== id); 
+                        this.state.transactions = this.state.transactions.filter(t => t.debtId !== id);
+
+                        this.saveData(); 
+                        this.renderDebts(); 
+                        
+                        if(document.getElementById('transactions').classList.contains('active')) this.renderTransactions();
+                        if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                        if(document.getElementById('friends').classList.contains('active')) this.renderFriends();
+                        
+                        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Dívida e registros apagados!', showConfirmButton: false, timer: 2000 });
+                    } 
+                }); 
+            },
             renderDebts() {
                 const container = document.getElementById('debts-container'); container.innerHTML = '';
                 if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; return; }
@@ -2707,15 +2857,21 @@
                 this.state.recurring.forEach(r => {
                     const cat = this.state.categories.find(c => c.id === r.categoryId);
                     const isExp = r.type === 'expense';
+                    
+                    const displayAmt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
+                    
                     container.innerHTML += `
                         <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
                             <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '🔄'}</div>
                             <div class="flex flex-col flex-1 min-w-0 pr-1">
-                                <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate w-full block">${this.escapeHTML(r.description)}</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate block">${this.escapeHTML(r.description)}</span>
+                                    ${r.isSplit ? '<span class="text-[9px] bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300 px-1.5 py-0.5 rounded font-black flex-shrink-0">DIVIDIDA</span>' : ''}
+                                </div>
                                 <span class="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold mt-0.5 truncate block">Todo dia ${r.day} • ${isExp ? 'Despesa' : 'Receita'}</span>
                             </div>
                             <div class="flex items-center gap-1.5 flex-shrink-0">
-                                <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right pr-2 ${isExp ? 'text-rose-500' : 'text-emerald-500'}">${isExp ? '-' : '+'} ${this.formatCurrency(r.amount)}</span>
+                                <span class="font-black text-sm md:text-base truncate max-w-[80px] sm:max-w-none text-right pr-2 ${isExp ? 'text-rose-500' : 'text-emerald-500'}">${isExp ? '-' : '+'} ${this.formatCurrency(displayAmt)}</span>
                                 <button onclick="app.editRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-indigo-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 active:scale-95 transition-colors"><i class="ph ph-pencil-simple text-base"></i></button>
                                 <button onclick="app.deleteRecurring('${r.id}')" class="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-900/50 active:scale-95 transition-colors"><i class="ph ph-trash text-base"></i></button>
                             </div>
@@ -2726,58 +2882,186 @@
 
             async newRecurring() {
                 const catOpts = this.state.categories.map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
-                const { value: formValues } = await Swal.fire({ title: 'Lançamento Fixo', html: `<input id="r-desc" class="swal2-input" placeholder="Nome (Ex: Netflix)"><input id="r-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)"><input id="r-day" type="number" min="1" max="31" class="swal2-input" placeholder="Todo dia... (1 a 31)"><select id="r-type" class="swal2-select font-bold"><option value="expense">Despesa Fixa</option><option value="income">Receita Fixa</option></select><select id="r-cat" class="swal2-select">${catOpts}</select>`, focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', preConfirm: () => { return { description: document.getElementById('r-desc').value, amount: Number(document.getElementById('r-val').value), day: Number(document.getElementById('r-day').value), type: document.getElementById('r-type').value, categoryId: document.getElementById('r-cat').value, lastProcessedMonth: null } } });
-                if (formValues && formValues.description && formValues.day && formValues.amount) { this.state.recurring.push({ id: this.generateId(), ...formValues }); this.saveData(); this.renderRecurringList(); this.processRecurring(); }
+                const { value: formValues } = await Swal.fire({ 
+                    title: 'Lançamento Fixo', 
+                    html: `
+                        <input id="r-desc" class="swal2-input" placeholder="Nome (Ex: Netflix)">
+                        <input id="r-val" type="number" step="0.01" class="swal2-input" placeholder="Valor (R$)" oninput="window.calcSplit()">
+                        <input id="r-day" type="number" min="1" max="31" class="swal2-input" placeholder="Todo dia... (1 a 31)">
+                        <select id="r-type" class="swal2-select font-bold">
+                            <option value="expense">Despesa Fixa</option>
+                            <option value="income">Receita Fixa</option>
+                        </select>
+                        <select id="r-cat" class="swal2-select">${catOpts}</select>
+                        
+                        <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                            <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-2">
+                                <input type="checkbox" id="swal-r-split" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" onchange="document.getElementById('r-split-container').classList.toggle('hidden')">
+                                Dividir conta fixa com amigos?
+                            </label>
+                            <div id="r-split-container" class="hidden bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-2 space-y-2">
+                                <div id="split-friends-list" class="flex flex-col gap-2"></div>
+                                <button type="button" onclick="window.addSplitFriend()" class="text-xs font-bold text-indigo-600 bg-indigo-100 px-3 py-2.5 rounded-lg w-full mt-2">+ Adicionar Pessoa</button>
+                                <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                    <label class="block text-xs font-bold text-slate-500 ml-1">O que sobra p/ VOCÊ (R$)</label>
+                                    <input id="swal-split-my" type="number" class="swal2-input !mt-0 !text-sm w-24 sm:w-32 bg-transparent border-none text-right font-black !p-0" readonly value="0.00">
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="swal-tx-val" value="0">
+                    `, 
+                    didOpen: () => {
+                        document.getElementById('r-val').addEventListener('input', (e) => {
+                            document.getElementById('swal-tx-val').value = e.target.value;
+                            window.calcSplit();
+                        });
+                    },
+                    focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar', 
+                    preConfirm: () => { 
+                        let isSplit = document.getElementById('swal-r-split').checked;
+                        let friends = [];
+                        let myVal = 0;
+                        let totalVal = Number(document.getElementById('r-val').value);
+
+                        if (isSplit && document.getElementById('r-type').value === 'expense') {
+                            document.querySelectorAll('.split-friend-item').forEach(div => {
+                                let fName = div.querySelector('.friend-name').value;
+                                friends.push({
+                                    name: fName,
+                                    val: Number(div.querySelector('.friend-val').value),
+                                    paidCount: 0 
+                                });
+                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
+                            });
+                            let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
+                            myVal = totalVal - friendsTotal;
+                            
+                            if (friends.length === 0) { Swal.showValidationMessage('Adicione amigos na divisão!'); return false; }
+                            if (myVal < -0.01) { Swal.showValidationMessage('A soma dos amigos excede o total!'); return false; }
+                        }
+
+                        return { 
+                            description: document.getElementById('r-desc').value, 
+                            amount: totalVal, 
+                            day: Number(document.getElementById('r-day').value), 
+                            type: document.getElementById('r-type').value, 
+                            categoryId: document.getElementById('r-cat').value, 
+                            lastProcessedMonth: null,
+                            isSplit: isSplit,
+                            friends: friends,
+                            myVal: myVal
+                        } 
+                    } 
+                });
+                if (formValues && formValues.description && formValues.day && formValues.amount) { 
+                    this.state.recurring.push({ id: this.generateId(), ...formValues }); 
+                    this.saveData(); this.renderRecurringList(); this.processRecurring(); 
+                }
             },
             
             async editRecurring(id) {
                 const rec = this.state.recurring.find(r => r.id === id);
                 if (!rec) return;
                 const catOpts = this.state.categories.map(c => `<option value="${c.id}" ${c.id === rec.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+
+                let isSplitHtml = `
+                    <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-2">
+                            <input type="checkbox" id="swal-r-split" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" ${rec.isSplit ? 'checked' : ''} onchange="document.getElementById('r-split-container').classList.toggle('hidden')">
+                            Dividir conta fixa com amigos?
+                        </label>
+                        <div id="r-split-container" class="${rec.isSplit ? '' : 'hidden'} bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-2 space-y-2">
+                            <p class="text-[10px] text-rose-500 font-bold mb-2">Atenção: A mudança nos amigos afetará apenas os lançamentos futuros ou se você excluir os deste mês no extrato.</p>
+                            <div id="split-friends-list" class="flex flex-col gap-2"></div>
+                            <button type="button" onclick="window.addSplitFriend()" class="text-xs font-bold text-indigo-600 bg-indigo-100 px-3 py-2.5 rounded-lg w-full mt-2">+ Adicionar Pessoa</button>
+                            <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                                <label class="block text-xs font-bold text-slate-500 ml-1">O que sobra p/ VOCÊ (R$)</label>
+                                <input id="swal-split-my" type="number" class="swal2-input !mt-0 !text-sm w-24 sm:w-32 bg-transparent border-none text-right font-black !p-0" readonly value="${rec.myVal || 0}">
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="swal-tx-val" value="${rec.amount}">
+                `;
+
                 const { value: formValues } = await Swal.fire({
                     title: 'Editar Lançamento',
                     html: `
-                        <input id="r-desc" class="swal2-input" value="${rec.description}">
-                        <input id="r-val" type="number" step="0.01" class="swal2-input" value="${rec.amount}">
+                        <input id="r-desc" class="swal2-input" value="${this.escapeHTML(rec.description)}">
+                        <input id="r-val" type="number" step="0.01" class="swal2-input" value="${rec.amount}" oninput="window.calcSplit()">
                         <input id="r-day" type="number" min="1" max="31" class="swal2-input" value="${rec.day}">
                         <select id="r-type" class="swal2-select font-bold">
                             <option value="expense" ${rec.type === 'expense' ? 'selected' : ''}>Despesa Fixa</option>
                             <option value="income" ${rec.type === 'income' ? 'selected' : ''}>Receita Fixa</option>
                         </select>
-                        <select id="r-cat" class="swal2-select">${catOpts}</select>`,
+                        <select id="r-cat" class="swal2-select">${catOpts}</select>
+                        ${isSplitHtml}
+                    `,
+                    didOpen: () => {
+                        document.getElementById('r-val').addEventListener('input', (e) => {
+                            document.getElementById('swal-tx-val').value = e.target.value;
+                            window.calcSplit();
+                        });
+                        if (rec.isSplit && rec.friends) {
+                            rec.friends.forEach(f => {
+                                window.addSplitFriend(f.name, f.val, "0");
+                            });
+                        }
+                    },
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
                     preConfirm: () => {
+                        let isSplit = document.getElementById('swal-r-split') ? document.getElementById('swal-r-split').checked : false;
+                        let friends = [];
+                        let myVal = 0;
+                        let totalVal = Number(document.getElementById('r-val').value);
+
+                        if (isSplit && document.getElementById('r-type').value === 'expense') {
+                            document.querySelectorAll('.split-friend-item').forEach(div => {
+                                let fName = div.querySelector('.friend-name').value;
+                                friends.push({
+                                    name: fName,
+                                    val: Number(div.querySelector('.friend-val').value),
+                                    paidCount: 0
+                                });
+                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
+                            });
+                            let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
+                            myVal = totalVal - friendsTotal;
+                            
+                            if (friends.length === 0) { Swal.showValidationMessage('Adicione amigos na divisão!'); return false; }
+                            if (myVal < -0.01) { Swal.showValidationMessage('A soma dos amigos excede o total!'); return false; }
+                        }
+
                         return {
                             description: document.getElementById('r-desc').value,
-                            amount: Number(document.getElementById('r-val').value),
+                            amount: totalVal,
                             day: Number(document.getElementById('r-day').value),
                             type: document.getElementById('r-type').value,
-                            categoryId: document.getElementById('r-cat').value
+                            categoryId: document.getElementById('r-cat').value,
+                            isSplit: isSplit,
+                            friends: friends,
+                            myVal: myVal
                         }
                     }
                 });
-                
+
                 if (formValues && formValues.description && formValues.day && formValues.amount) {
-                    const oldDesc = rec.description;
                     Object.assign(rec, formValues);
                     
-                    const now = new Date();
-                    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-                    const generatedTx = this.state.transactions.find(t => 
-                        (t.recurringId === id || (t.isRecurringAuto && t.description === oldDesc)) 
-                        && t.date.startsWith(currentMonthKey)
-                    );
-                    
-                    if (generatedTx) {
-                        generatedTx.recurringId = id; 
-                        generatedTx.description = rec.description;
-                        generatedTx.amount = rec.amount;
-                        generatedTx.type = rec.type;
-                        generatedTx.categoryId = rec.categoryId;
-                        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-                        const targetDay = Math.min(rec.day, lastDayOfMonth);
-                        generatedTx.date = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
+                    if (!rec.isSplit) {
+                        const now = new Date();
+                        const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                        const generatedTx = this.state.transactions.find(t => 
+                            t.recurringId === id && t.date.startsWith(currentMonthKey) && !t.splitName
+                        );
+                        if (generatedTx) {
+                            generatedTx.description = rec.description;
+                            generatedTx.amount = rec.amount;
+                            generatedTx.type = rec.type;
+                            generatedTx.categoryId = rec.categoryId;
+                            const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                            const targetDay = Math.min(rec.day, lastDayOfMonth);
+                            generatedTx.date = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
+                        }
                     }
 
                     this.saveData();
@@ -3024,6 +3308,7 @@
                         localStorage.removeItem(`${this.prefix}debts`);
                         localStorage.removeItem(`${this.prefix}goals`);
                         localStorage.removeItem(`${this.prefix}cards`);
+                        localStorage.removeItem(`${this.prefix}friends`);
                         location.reload(); 
                     } 
                 }); 
