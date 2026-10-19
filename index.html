@@ -156,7 +156,12 @@
                     <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Dashboard</h2>
                     <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Resumo do período</p>
                 </div>
-                <input type="month" id="dash-month-filter" class="date-pill" onchange="app.renderDashboard()">
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="month" id="dash-month-filter" class="date-pill !px-4 !py-2.5 flex-1 sm:flex-none" onchange="app.renderDashboard()">
+                    <button onclick="document.getElementById('dash-month-filter').value=''; app.renderDashboard()" class="date-pill !px-4 !py-2.5 !bg-indigo-50 !border-indigo-100 dark:!bg-indigo-900/30 dark:!border-indigo-800 !text-indigo-600 dark:!text-indigo-400 hover:!bg-indigo-100 transition-colors flex-shrink-0" title="Ver todos os meses juntos">
+                        Todas
+                    </button>
+                </div>
             </div>
 
             <div class="grid-auto-fit w-full">
@@ -190,7 +195,14 @@
                 </div>
 
                 <div class="card flex flex-col items-center justify-center min-h-[280px]">
-                    <h4 class="font-black w-full text-left mb-4 text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Previsão</h4>
+                    <div class="flex items-center justify-between w-full mb-4 gap-2">
+                        <h4 class="font-black text-lg md:text-xl text-slate-800 dark:text-slate-200 truncate">Previsão</h4>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button onclick="app.shiftForecast(-1)" class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center active:scale-95 transition-colors" title="Meses anteriores"><i class="ph ph-caret-left font-bold"></i></button>
+                            <span id="forecast-range" class="text-[11px] font-bold text-slate-500 dark:text-slate-400 whitespace-nowrap px-1"></span>
+                            <button onclick="app.shiftForecast(1)" class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 flex items-center justify-center active:scale-95 transition-colors" title="Próximos meses"><i class="ph ph-caret-right font-bold"></i></button>
+                        </div>
+                    </div>
                     <div class="relative w-full h-[200px]"><canvas id="forecastChart"></canvas></div>
                 </div>
 
@@ -289,7 +301,13 @@
                     <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Caderninho</h2>
                     <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle devedores e dívidas.</p>
                 </div>
-                <button onclick="app.newDebt()" class="btn-primary sm:w-auto"><i class="ph ph-notebook text-xl mr-2"></i> Nova Dívida</button>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="month" id="debts-month-filter" class="date-pill !px-4 !py-2.5 flex-1 sm:flex-none" onchange="app.renderDebts()" title="Ver pagamentos agendados deste mês">
+                    <button onclick="document.getElementById('debts-month-filter').value=''; app.renderDebts()" class="date-pill !px-4 !py-2.5 !bg-indigo-50 !border-indigo-100 dark:!bg-indigo-900/30 dark:!border-indigo-800 !text-indigo-600 dark:!text-indigo-400 hover:!bg-indigo-100 transition-colors flex-shrink-0">
+                        Todas
+                    </button>
+                    <button onclick="app.newDebt()" class="btn-primary !w-auto flex-shrink-0"><i class="ph ph-notebook text-xl mr-2"></i> Nova Dívida</button>
+                </div>
             </div>
             <div class="grid-auto-fit w-full" id="debts-container"></div>
         </section>
@@ -534,6 +552,44 @@
             });
         };
 
+        // Linhas de pagamento do Caderninho (plano de pagamentos com datas)
+        window.addPayRow = function(date = '', val = '', paid = true) {
+            const list = document.getElementById('pay-plan-list');
+            if(!list) return;
+            const div = document.createElement('div');
+            div.className = "pay-row flex flex-col gap-2 p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 relative";
+            div.innerHTML = `
+                <button type="button" onclick="this.parentElement.remove(); window.calcPayPlan()" class="absolute top-1 right-2 text-red-500 font-black text-lg p-1">&times;</button>
+                <div class="flex flex-row gap-2 w-full">
+                    <div class="w-1/2">
+                        <label class="text-[9px] font-bold text-slate-500 ml-1">Data</label>
+                        <input type="date" class="swal2-input !mt-0 !text-sm pay-date w-full" value="${date}">
+                    </div>
+                    <div class="w-1/2">
+                        <label class="text-[9px] font-bold text-slate-500 ml-1">Valor (R$)</label>
+                        <input type="number" step="0.01" class="swal2-input !mt-0 !text-sm pay-val w-full" placeholder="0.00" oninput="window.calcPayPlan()" value="${val}">
+                    </div>
+                </div>
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 ml-1">
+                    <input type="checkbox" class="pay-paid w-4 h-4" ${paid ? 'checked' : ''}> Já foi pago
+                </label>
+            `;
+            list.appendChild(div);
+            window.calcPayPlan();
+        };
+
+        window.calcPayPlan = function() {
+            const remaining = Number(document.getElementById('pay-plan-remaining')?.value || 0);
+            let sum = 0;
+            document.querySelectorAll('.pay-val').forEach(v => sum += Number(v.value) || 0);
+            const left = remaining - sum;
+            const el = document.getElementById('pay-plan-left');
+            if(el) {
+                el.innerText = left.toFixed(2).replace('.', ',');
+                el.className = left < -0.01 ? 'font-black text-red-500' : 'font-black text-slate-700 dark:text-slate-200';
+            }
+        };
+
         const app = {
             state: { transactions: [], categories: [], recurring: [], debts: [], goals: [], cards: [], friends: [], theme: 'light' },
             profiles: [],
@@ -541,6 +597,7 @@
             prefix: 'gf_',
             chartInstance: null,
             forecastChartInstance: null,
+            forecastOffset: 0,
 
             init() {
                 this.loadProfiles();
@@ -556,6 +613,27 @@
             escapeHTML(str) {
                 if (typeof str !== 'string') return str;
                 return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
+            },
+
+            // Soma n dias a uma data "YYYY-MM-DD"
+            addDaysStr(str, n) {
+                const [y, m, d] = str.split('-').map(Number);
+                const dt = new Date(Date.UTC(y, m - 1, d + n));
+                return dt.toISOString().slice(0, 10);
+            },
+
+            // Mês da fatura de uma compra no cartão
+            getInvoiceMonth(y, mNum, dNum, cDay, dueDay) {
+                let tm = mNum; let ty = y;
+                if (dueDay < cDay) {
+                    tm++;
+                    if (tm > 12) { tm = 1; ty++; }
+                }
+                if (dNum >= cDay) {
+                    tm++;
+                    if (tm > 12) { tm = 1; ty++; }
+                }
+                return `${ty}-${String(tm).padStart(2, '0')}`;
             },
 
             loadProfiles() {
@@ -693,16 +771,25 @@
             },
 
             updateStatusIcon() {
-                const d = new Date();
-                const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-                const validTx = this.state.transactions.filter(t => t.date.startsWith(nowMonth));
-                
-                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                const cashIncome = validTx.filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null)).reduce((a,b) => a + Number(b.amount), 0);
-                const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
-                
-                const balance = cashIncome - cashExpense;
-                const iconUrl = balance >= 0 ? '1.png' : '2.png';
+                let iconUrl;
+                const debtsTab = document.getElementById('debts');
+                if (debtsTab && debtsTab.classList.contains('active')) {
+                    // Na aba Caderninho: gatinho feliz (1) se não há pagamentos agendados pendentes no mês escolhido; triste (2) se há.
+                    const m = document.getElementById('debts-month-filter')?.value || '';
+                    const pending = this.state.transactions.some(t => t.debtId && !t.isPaid && t.description.includes('[Agendado]') && t.date.startsWith(m));
+                    iconUrl = pending ? '2.png' : '1.png';
+                } else {
+                    const d = new Date();
+                    const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    const validTx = this.state.transactions.filter(t => t.date.startsWith(nowMonth));
+                    
+                    const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                    const cashIncome = validTx.filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null)).reduce((a,b) => a + Number(b.amount), 0);
+                    const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
+                    
+                    const balance = cashIncome - cashExpense;
+                    iconUrl = balance >= 0 ? '1.png' : '2.png';
+                }
                 
                 const sidebarLogo = document.getElementById('sidebar-logo'); if(sidebarLogo) sidebarLogo.src = iconUrl;
                 const mobileLogo = document.getElementById('mobile-logo'); if(mobileLogo) mobileLogo.src = iconUrl;
@@ -730,6 +817,7 @@
                 if(tabId === 'forecast') this.renderForecastTab();
                 if(tabId === 'friends') this.renderFriends();
                 if(tabId === 'cadastros') { this.renderCategories(); this.renderRecurringList(); }
+                this.updateStatusIcon();
             },
 
             populateCatFilter() {
@@ -761,10 +849,16 @@
                         
                         const dateStr = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
 
+                        // Se a conta é no cartão de crédito, cai na fatura correspondente
+                        const card = (rec.paymentMethod === 'credit' && rec.cardId) ? this.state.cards.find(c => c.id === rec.cardId) : null;
+                        const invMonth = card ? this.getInvoiceMonth(now.getFullYear(), now.getMonth() + 1, targetDay, card.closingDay, card.dueDay) : null;
+
                         const txBase = {
                             date: dateStr, type: rec.type, categoryId: rec.categoryId, 
                             isRecurringAuto: true, isPaid: false, 
                             paymentMethod: rec.paymentMethod || 'pix',
+                            cardId: card ? card.id : null,
+                            invoiceMonth: invMonth,
                             dueDate: (rec.paymentMethod === 'boleto') ? dateStr : null
                         };
 
@@ -839,7 +933,8 @@
             },
 
             renderDashboard() {
-                const filter = document.getElementById('dash-month-filter').value; if(!filter) return;
+                // Filtro vazio = todos os meses juntos (startsWith('') é sempre verdadeiro)
+                const filter = document.getElementById('dash-month-filter').value;
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
                 
                 const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
@@ -860,23 +955,30 @@
                 const alertsDiv = document.getElementById('budget-alerts'); alertsDiv.innerHTML = '';
                 const expensesByCat = {}; monthTx.filter(t => t.type === 'expense').forEach(t => { expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount); });
 
-                this.state.categories.filter(c => c.type === 'expense' && c.budgetLimit > 0).forEach(cat => {
-                    const spent = expensesByCat[cat.id] || 0; const limit = Number(cat.budgetLimit); const pct = (spent / limit) * 100;
-                    if(pct >= 80) {
-                        const isOver = pct > 100;
-                        alertsDiv.innerHTML += `
-                            <div class="p-4 rounded-2xl flex flex-col gap-2 ${isOver ? 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300' : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'} w-full">
-                                <div class="flex items-center justify-between gap-2">
-                                    <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${this.escapeHTML(cat.name)}</span></div>
-                                    <span class="font-black text-base flex-shrink-0">${pct.toFixed(0)}%</span>
+                // Limites só fazem sentido para um mês específico
+                if (filter) {
+                    this.state.categories.filter(c => c.type === 'expense' && c.budgetLimit > 0).forEach(cat => {
+                        const spent = expensesByCat[cat.id] || 0; const limit = Number(cat.budgetLimit); const pct = (spent / limit) * 100;
+                        if(pct >= 80) {
+                            const isOver = pct > 100;
+                            alertsDiv.innerHTML += `
+                                <div class="p-4 rounded-2xl flex flex-col gap-2 ${isOver ? 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300' : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'} w-full">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${this.escapeHTML(cat.name)}</span></div>
+                                        <span class="font-black text-base flex-shrink-0">${pct.toFixed(0)}%</span>
+                                    </div>
+                                    <div class="w-full bg-black/5 dark:bg-white/10 rounded-full h-2 mt-1"><div class="${isOver ? 'bg-red-500' : 'bg-yellow-500'} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div></div>
+                                    <div class="text-right text-xs font-bold opacity-80 truncate w-full">${this.formatCurrency(spent)} / ${this.formatCurrency(limit)}</div>
                                 </div>
-                                <div class="w-full bg-black/5 dark:bg-white/10 rounded-full h-2 mt-1"><div class="${isOver ? 'bg-red-500' : 'bg-yellow-500'} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div></div>
-                                <div class="text-right text-xs font-bold opacity-80 truncate w-full">${this.formatCurrency(spent)} / ${this.formatCurrency(limit)}</div>
-                            </div>
-                        `;
-                    }
-                });
-                if(alertsDiv.innerHTML === '') alertsDiv.innerHTML = '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhum limite excedido.</div>';
+                            `;
+                        }
+                    });
+                }
+                if(alertsDiv.innerHTML === '') {
+                    alertsDiv.innerHTML = filter
+                        ? '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Nenhum limite excedido.</div>'
+                        : '<div class="p-5 text-center text-slate-500 bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 font-bold text-sm">Selecione um mês para ver os limites.</div>';
+                }
                 
                 const fixedDiv = document.getElementById('dash-fixed-expenses'); fixedDiv.innerHTML = '';
                 const fixedExpenses = this.state.recurring.filter(r => r.type === 'expense');
@@ -970,6 +1072,11 @@
                 this.chartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, borderRadius: 20 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark ? '#1e293b' : '#ffffff', titleColor: isDark ? '#f8fafc' : '#0f172a', bodyColor: isDark ? '#cbd5e1' : '#475569', padding: 12, cornerRadius: 16, displayColors: false, callbacks: { label: (ctx) => data[0] === 1 && labels[0]==='Sem despesas' ? '' : this.formatCurrency(ctx.raw) } } } } });
             },
 
+            shiftForecast(delta) {
+                this.forecastOffset += delta;
+                this.renderForecastChart();
+            },
+
             renderForecastChart() {
                 const ctx = document.getElementById('forecastChart').getContext('2d');
                 if (this.forecastChartInstance) this.forecastChartInstance.destroy();
@@ -977,12 +1084,14 @@
                 const labels = [];
                 const data = [];
                 const now = new Date();
+                const fmtShort = (d) => `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`;
                 
-                for (let i = 0; i < 4; i++) {
+                for (let k = 0; k < 4; k++) {
+                    const i = this.forecastOffset + k;
                     const futureDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
                     const monthKey = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}`;
-                    const monthName = futureDate.toLocaleString('pt-BR', { month: 'short' }).toUpperCase();
-                    labels.push(monthName);
+                    const monthName = futureDate.toLocaleString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase();
+                    labels.push(`${monthName}/${String(futureDate.getFullYear()).slice(2)}`);
 
                     const txSum = this.state.transactions
                         .filter(t => {
@@ -1009,6 +1118,13 @@
                         }, 0);
 
                     data.push(txSum + recSum);
+                }
+
+                const rangeEl = document.getElementById('forecast-range');
+                if (rangeEl) {
+                    const first = new Date(now.getFullYear(), now.getMonth() + this.forecastOffset, 1);
+                    const last = new Date(now.getFullYear(), now.getMonth() + this.forecastOffset + 3, 1);
+                    rangeEl.innerText = `${fmtShort(first)} – ${fmtShort(last)}`;
                 }
 
                 const isDark = this.state.theme === 'dark';
@@ -1507,8 +1623,11 @@
                                 </div>
 
                                 <div id="tx-boleto-container" class="hidden mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
-                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Data de Vencimento do Boleto <span class="text-rose-500">*</span></label>
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1">Vencimento do 1º boleto <span class="text-rose-500">*</span></label>
                                     <input id="swal-tx-boleto-due" type="date" class="swal2-input !mt-0 !text-sm !py-2">
+                                    <label class="block text-[11px] font-bold text-slate-500 mb-1 mt-2">Dias entre cada boleto (se parcelado)</label>
+                                    <input id="swal-tx-boleto-interval" type="number" min="1" value="30" class="swal2-input !mt-0 !text-sm !py-2">
+                                    <p class="text-[10px] text-slate-400 font-bold mt-1 leading-tight">Ex: 30 = um boleto a cada 30 dias. 15 = a cada quinzena.</p>
                                 </div>
 
                                 <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
@@ -1568,7 +1687,7 @@
                         const isPaid = isPaidEl ? isPaidEl.checked : true;
 
                         let isInstallment = false; let instMode = null; let instCount = null;
-                        let paymentMethod = 'pix'; let cardId = null; let boletoDue = null;
+                        let paymentMethod = 'pix'; let cardId = null; let boletoDue = null; let boletoInterval = 30;
                         
                         let isSplit = false;
                         let friends = [];
@@ -1584,6 +1703,7 @@
                                 cardId = document.getElementById('swal-tx-card-id').value;
                             } else if (paymentMethod === 'boleto') {
                                 boletoDue = document.getElementById('swal-tx-boleto-due').value;
+                                boletoInterval = Number(document.getElementById('swal-tx-boleto-interval').value) || 30;
                             }
                             
                             isSplit = document.getElementById('swal-tx-split').checked;
@@ -1612,23 +1732,12 @@
                             if (myVal < -0.01) { Swal.showValidationMessage('A soma das partes dos amigos excede o valor total da compra!'); return false; }
                         }
                         
-                        return { desc, val: Number(val), date, type, cat, isInstallment, instMode, instCount: Number(instCount), paymentMethod, cardId, boletoDue, isPaid, isSplit, friends, myVal };
+                        return { desc, val: Number(val), date, type, cat, isInstallment, instMode, instCount: Number(instCount), paymentMethod, cardId, boletoDue, boletoInterval, isPaid, isSplit, friends, myVal };
                     }
                 });
 
                 if (formValues) { 
-                    const getInvoiceMonth = (y, mNum, dNum, cDay, dueDay) => {
-                        let tm = mNum; let ty = y;
-                        if (dueDay < cDay) {
-                            tm++;
-                            if (tm > 12) { tm = 1; ty++; }
-                        }
-                        if (dNum >= cDay) {
-                            tm++;
-                            if (tm > 12) { tm = 1; ty++; }
-                        }
-                        return `${ty}-${String(tm).padStart(2, '0')}`;
-                    };
+                    const getInvoiceMonth = (y, mNum, dNum, cDay, dueDay) => this.getInvoiceMonth(y, mNum, dNum, cDay, dueDay);
 
                     const isCC = formValues.paymentMethod === 'credit';
                     const card = (isCC && formValues.cardId) ? this.state.cards.find(c => c.id === formValues.cardId) : null;
@@ -1690,12 +1799,6 @@
                         
                         const [y, m, d] = formValues.date.split('-');
                         let currYear = parseInt(y); let currMonth = parseInt(m); const currDay = parseInt(d);
-                        
-                        let bDueYear = null; let bDueMonth = null; let bDueDay = null;
-                        if (formValues.paymentMethod === 'boleto') {
-                            const [by, bm, bd] = formValues.boletoDue.split('-');
-                            bDueYear = parseInt(by); bDueMonth = parseInt(bm); bDueDay = parseInt(bd);
-                        }
 
                         const groupId = this.generateId();
 
@@ -1707,12 +1810,10 @@
                             let invMonth = null;
                             if (card) invMonth = getInvoiceMonth(currYear, currMonth, targetDay, card.closingDay, card.dueDay);
 
+                            // Boleto parcelado: 1º vencimento escolhido + N dias entre cada boleto
                             let currentBoletoDue = null;
                             if (formValues.paymentMethod === 'boleto') {
-                                const bLastDay = new Date(bDueYear, bDueMonth, 0).getDate();
-                                const bTargetDay = Math.min(bDueDay, bLastDay);
-                                currentBoletoDue = `${bDueYear}-${String(bDueMonth).padStart(2, '0')}-${String(bTargetDay).padStart(2, '0')}`;
-                                bDueMonth++; if(bDueMonth > 12) { bDueMonth = 1; bDueYear++; }
+                                currentBoletoDue = this.addDaysStr(formValues.boletoDue, (i - 1) * formValues.boletoInterval);
                             }
 
                             const txBaseInfo = {
@@ -2041,12 +2142,11 @@
                                 }
                             }
 
+                            currentM++; if (currentM > 12) { currentM = 1; currentY++; }
                         }
                         
                         if (isSplit && formValues.friends) {
                             this.state.transactions = this.state.transactions.filter(t => !theirTxs.map(x=>x.id).includes(t.id));
-                            
-                            let currYear = parseInt(y); let currMonth = parseInt(m);
                             
                             formValues.friends.forEach(f => {
                                 let fAmtInst = f.val / numInst;
@@ -2212,8 +2312,11 @@
                         const isPayment = cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
                         
                         if (isPayment) {
-                            debt.paidAmount -= tx.amount;
-                            if (debt.paidAmount < 0) debt.paidAmount = 0;
+                            // Só desconta do que já foi pago (agendados ainda não entraram no saldo)
+                            if (tx.isPaid) {
+                                debt.paidAmount -= tx.amount;
+                                if (debt.paidAmount < 0) debt.paidAmount = 0;
+                            }
                         } else {
                             debt.totalAmount -= tx.amount;
                             if (debt.totalAmount <= 0.01) {
@@ -2295,12 +2398,15 @@
                                 subAction = `<button onclick="app.togglePaid('${subTx.id}')" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full ${subTx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 dark:bg-slate-900/50'}"><i class="ph ph-check-circle text-sm sm:text-lg"></i></button>`;
                             }
 
+                            const subDue = subTx.dueDate && subTx.paymentMethod === 'boleto' ? `<span class="block text-[9px] font-bold text-slate-400">venc. ${subTx.dueDate.split('-').reverse().join('/')}</span>` : '';
+
                             return `<div class="flex justify-between items-center p-2 sm:p-3 border-b border-slate-100/50 dark:border-slate-700/50 text-sm pl-12 sm:pl-16 bg-slate-50/30 dark:bg-slate-800/30 last:border-0">
                                 <span class="truncate pr-2 font-bold text-xs sm:text-sm text-slate-600 dark:text-slate-300 ${subTx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(subTx.description)}</span>
                                 <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
                                     <div class="text-right">
                                         <span class="block font-black text-xs sm:text-sm ${subTx.isPaid ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}">${this.formatCurrency(subTx.amount)}</span>
                                         <span class="text-[9px] sm:text-[10px] font-bold text-slate-400">${sd}/${sm}/${sy}</span>
+                                        ${subDue}
                                     </div>
                                     <div class="flex gap-1">
                                         ${subAction}
@@ -2352,6 +2458,8 @@
                     } else {
                         paidActionHtml = `<button onclick="app.togglePaid('${tx.id}')" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800'} active:scale-95 flex-shrink-0 transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-sm sm:text-lg"></i></button>`;
                     }
+
+                    const singleDue = tx.paymentMethod === 'boleto' && tx.dueDate && !isSubItem ? '' : '';
 
                     return `
                         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 dark:hover:bg-slate-800/60 pl-6 sm:pl-12 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 border-b border-slate-100/50 dark:border-slate-700/30'} transition-colors gap-2 sm:gap-3 w-full" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
@@ -2545,13 +2653,27 @@
                 });
             },
 
+            // Marcar como pago / não pago. Em pagamentos de dívida, também atualiza o saldo quitado.
             togglePaid(id) {
                 const tx = this.state.transactions.find(t => t.id === id);
-                if(tx) { 
-                    tx.isPaid = !tx.isPaid; 
-                    this.saveData(); this.renderTransactions(); 
-                    if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                if(!tx) return;
+                tx.isPaid = !tx.isPaid;
+
+                const cat = this.state.categories.find(c => c.id === tx.categoryId);
+                const isDebtPay = tx.debtId && cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
+                if (isDebtPay) {
+                    const debt = this.state.debts.find(d => d.id === tx.debtId);
+                    if (debt) debt.paidAmount = Math.max(0, debt.paidAmount + (tx.isPaid ? tx.amount : -tx.amount));
+                    if (tx.isPaid) {
+                        tx.description = tx.description.replace('[Agendado] ', '');
+                    } else if (!tx.description.includes('[Agendado]')) {
+                        tx.description = '[Agendado] ' + tx.description;
+                    }
                 }
+
+                this.saveData(); this.renderTransactions(); 
+                if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                if(document.getElementById('debts').classList.contains('active')) this.renderDebts();
             },
 
             async newDebt() {
@@ -2629,42 +2751,39 @@
                 }
             },
             
+            // Pagamento/recebimento com um ou vários pagamentos agendados em datas diferentes
             async payDebt(id) {
                 const debt = this.state.debts.find(d => d.id === id); 
                 const remaining = debt.totalAmount - debt.paidAmount;
                 const today = new Date().toISOString().split('T')[0];
                 
-                const { value: formValues } = await Swal.fire({ 
+                const { value: rows } = await Swal.fire({ 
                     title: debt.type === 'owes_me' ? 'Receber / Agendar' : 'Amortizar / Agendar', 
                     html: `
                         <p class="font-bold text-slate-700 dark:text-white mb-2 truncate">${this.escapeHTML(debt.title)}</p>
-                        <p class="text-sm mb-4">Resta: ${this.formatCurrency(remaining)}</p>
-                        <label class="block text-xs font-bold text-slate-500 text-left px-2">Valor da Parcela (R$)</label>
-                        <input id="debt-pay-val" type="number" step="0.01" class="swal2-input !mt-0 mb-3" value="${remaining}">
-                        <label class="block text-xs font-bold text-slate-500 text-left px-2">Data</label>
-                        <input id="debt-pay-date" type="date" class="swal2-input !mt-0" value="${today}">
-                        <label class="flex items-center gap-3 mt-4 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer border-t border-slate-200 dark:border-slate-700 pt-4 px-2 text-left">
-                            <input type="checkbox" id="debt-pay-ispaid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" checked>
-                            Já foi pago? (Desmarque para agendar)
-                        </label>
+                        <p class="text-sm mb-3">Resta: ${this.formatCurrency(remaining)}</p>
+                        <input type="hidden" id="pay-plan-remaining" value="${remaining}">
+                        <div id="pay-plan-list" class="flex flex-col gap-2 text-left max-h-64 overflow-y-auto pr-1"></div>
+                        <button type="button" onclick="window.addPayRow('', '', false)" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-3 py-2.5 rounded-lg w-full mt-3 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors">+ Adicionar pagamento</button>
+                        <p class="text-[11px] font-bold text-slate-500 mt-3">Sobra a distribuir: R$ <span id="pay-plan-left">0,00</span></p>
                     `, 
+                    didOpen: () => { window.addPayRow(today, remaining, true); },
                     showCancelButton: true, confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar', 
                     preConfirm: () => {
-                        const val = Number(document.getElementById('debt-pay-val').value);
-                        const date = document.getElementById('debt-pay-date').value;
-                        const isPaid = document.getElementById('debt-pay-ispaid').checked;
-                        if (!val || val <= 0) { Swal.showValidationMessage('Insira um valor!'); return false; }
-                        if (val > remaining) { Swal.showValidationMessage('Valor excede a dívida!'); return false; }
-                        if (!date) { Swal.showValidationMessage('Insira a data!'); return false; }
-                        return { val, date, isPaid };
+                        const rows = [...document.querySelectorAll('.pay-row')].map(r => ({
+                            date: r.querySelector('.pay-date').value,
+                            val: Number(r.querySelector('.pay-val').value),
+                            paid: r.querySelector('.pay-paid').checked
+                        }));
+                        if (rows.length === 0) { Swal.showValidationMessage('Adicione pelo menos um pagamento!'); return false; }
+                        if (rows.some(r => !r.date || !r.val || r.val <= 0)) { Swal.showValidationMessage('Preencha data e valor de todos os pagamentos!'); return false; }
+                        const sum = rows.reduce((a, r) => a + r.val, 0);
+                        if (sum > remaining + 0.001) { Swal.showValidationMessage('A soma dos pagamentos excede a dívida!'); return false; }
+                        return rows;
                     } 
                 });
                 
-                if (formValues) {
-                    if(formValues.isPaid) {
-                        debt.paidAmount += formValues.val;
-                    }
-                    
+                if (rows) {
                     const isOwesMe = debt.type === 'owes_me';
                     const txType = isOwesMe ? 'income' : 'expense';
                     const catName = isOwesMe ? 'Recebimento de Dívida' : 'Pagamento de Dívida';
@@ -2674,25 +2793,30 @@
                         cat = { id: this.generateId(), name: catName, icon: isOwesMe ? '🤑' : '💸', type: txType, budgetLimit: 0 }; 
                         this.state.categories.push(cat); 
                     }
-                    
-                    this.state.transactions.push({ 
-                        id: this.generateId(), 
-                        debtId: debt.id,
-                        description: `${formValues.isPaid ? '' : '[Agendado] '}${isOwesMe ? 'Recebimento de' : 'Pag. Dívida'}: ${debt.title}`, 
-                        amount: formValues.val, 
-                        date: formValues.date, 
-                        type: txType, 
-                        categoryId: cat.id,
-                        isPaid: formValues.isPaid
+
+                    rows.forEach(r => {
+                        if (r.paid) debt.paidAmount += r.val;
+                        this.state.transactions.push({ 
+                            id: this.generateId(), 
+                            debtId: debt.id,
+                            description: `${r.paid ? '' : '[Agendado] '}${isOwesMe ? 'Recebimento de' : 'Pag. Dívida'}: ${debt.title}`, 
+                            amount: r.val, 
+                            date: r.date, 
+                            type: txType, 
+                            categoryId: cat.id,
+                            isPaid: r.paid
+                        });
                     });
                     
                     this.saveData(); this.renderDebts(); 
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                     
-                    if (txType === 'expense' && formValues.isPaid) {
-                        this.checkBudgetAndNotify(cat.id, formValues.date);
+                    const firstPaid = rows.find(r => r.paid);
+                    if (txType === 'expense' && firstPaid) {
+                        this.checkBudgetAndNotify(cat.id, firstPaid.date);
                     } else {
-                        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: formValues.isPaid ? 'Registrado!' : 'Agendado!', showConfirmButton: false, timer: 2000 });
+                        const allPaid = rows.every(r => r.paid);
+                        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: allPaid ? 'Registrado!' : 'Agendado!', showConfirmButton: false, timer: 2000 });
                     }
                 }
             },
@@ -2766,7 +2890,8 @@
             },
             renderDebts() {
                 const container = document.getElementById('debts-container'); container.innerHTML = '';
-                if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; return; }
+                const m = (document.getElementById('debts-month-filter') || {}).value || '';
+                if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; this.updateStatusIcon(); return; }
                 this.state.debts.forEach(d => {
                     const remaining = d.totalAmount - d.paidAmount; const pct = Math.min(100, (Math.max(0, d.paidAmount) / Math.max(1, d.totalAmount)) * 100); const isPaid = remaining <= 0;
                     const isOwesMe = d.type === 'owes_me';
@@ -2777,6 +2902,17 @@
                     } else {
                         badge = isOwesMe ? '<span class="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-[10px] font-black">A RECEBER</span>' : '<span class="text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 px-2 py-0.5 rounded text-[10px] font-black">A PAGAR</span>';
                     }
+
+                    // Pagamentos agendados (não pagos) — filtrados pelo mês escolhido, se houver
+                    const sched = this.state.transactions
+                        .filter(t => t.debtId === d.id && !t.isPaid && t.description.includes('[Agendado]') && t.date.startsWith(m))
+                        .sort((a, b) => a.date.localeCompare(b.date));
+                    const schedHtml = sched.length
+                        ? `<div class="pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1 w-full">${sched.map(t => {
+                                const [y, mo, dd] = t.date.split('-');
+                                return `<div class="flex justify-between text-xs font-bold"><span class="text-slate-500">📅 ${dd}/${mo}/${y}</span><span class="${isOwesMe ? 'text-emerald-500' : 'text-rose-500'}">${this.formatCurrency(t.amount)}</span></div>`;
+                           }).join('')}</div>`
+                        : (m ? '<p class="text-[10px] font-bold text-slate-400 pt-2">Sem pagamentos agendados neste mês.</p>' : '');
 
                     container.innerHTML += `
                         <div class="card p-5 flex flex-col justify-between gap-3 w-full">
@@ -2789,6 +2925,7 @@
                                 <div class="flex flex-col min-w-0"><span class="text-slate-500 font-bold">Total</span><span class="font-bold text-slate-800 dark:text-slate-200 truncate">${this.formatCurrency(d.totalAmount)}</span></div>
                                 <div class="flex flex-col text-right min-w-0"><span class="${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} font-bold">Falta</span><span class="font-black ${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} truncate">${this.formatCurrency(remaining)}</span></div>
                             </div>
+                            ${schedHtml}
                             <div class="flex gap-2 mt-2 w-full">
                                 ${!isPaid ? `<button onclick="app.payDebt('${d.id}')" class="btn-primary flex-1 !py-3 !text-sm ${isOwesMe ? 'bg-emerald-500 hover:bg-emerald-600' : ''}">${isOwesMe ? 'Receber' : 'Pagar'}</button>` : ''}
                                 <button onclick="app.editDebt('${d.id}')" class="btn-secondary !w-12 !px-0 flex-shrink-0 !py-3"><i class="ph ph-pencil-simple text-lg"></i></button>
@@ -2797,6 +2934,7 @@
                         </div>
                     `;
                 });
+                this.updateStatusIcon();
             },
 
             async newGoal() {
@@ -3007,7 +3145,10 @@
                     const displayAmt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
                     let methodBadge = '';
                     if (r.paymentMethod === 'boleto') methodBadge = ' • Boleto';
-                    else if (r.paymentMethod === 'credit') methodBadge = ' • Cartão';
+                    else if (r.paymentMethod === 'credit') {
+                        const card = this.state.cards.find(c => c.id === r.cardId);
+                        methodBadge = ` • ${card ? 'Cartão ' + this.escapeHTML(card.name) : 'Cartão'}`;
+                    }
                     
                     container.innerHTML += `
                         <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
@@ -3031,6 +3172,7 @@
 
             async newRecurring() {
                 const catOpts = this.state.categories.map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+                const cardOpts = this.state.cards.map(c => `<option value="${c.id}">${this.escapeHTML(c.name)}</option>`).join('');
                 const { value: formValues } = await Swal.fire({ 
                     title: 'Lançamento Fixo', 
                     html: `
@@ -3039,10 +3181,14 @@
                         <input id="r-day" type="number" min="1" max="31" class="swal2-input" placeholder="Todo dia... (1 a 31)">
                         
                         <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Método de Pagamento</label>
-                        <select id="r-method" class="swal2-select !mt-0 font-bold">
+                        <select id="r-method" class="swal2-select !mt-0 font-bold" onchange="document.getElementById('r-card-container').classList.toggle('hidden', this.value !== 'credit')">
                             <option value="pix">Dinheiro / Pix</option>
                             <option value="boleto">Boleto</option>
+                            ${this.state.cards.length > 0 ? '<option value="credit">Cartão de Crédito</option>' : ''}
                         </select>
+                        <div id="r-card-container" class="hidden mt-2">
+                            <select id="r-card" class="swal2-select !mt-0">${cardOpts}</select>
+                        </div>
 
                         <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Tipo de Transação</label>
                         <select id="r-type" class="swal2-select !mt-0 font-bold">
@@ -3080,6 +3226,7 @@
                         let friends = [];
                         let myVal = 0;
                         let totalVal = Number(document.getElementById('r-val').value);
+                        const method = document.getElementById('r-method').value;
 
                         if (isSplit && document.getElementById('r-type').value === 'expense') {
                             document.querySelectorAll('.split-friend-item').forEach(div => {
@@ -3102,7 +3249,8 @@
                             description: document.getElementById('r-desc').value, 
                             amount: totalVal, 
                             day: Number(document.getElementById('r-day').value), 
-                            paymentMethod: document.getElementById('r-method').value,
+                            paymentMethod: method,
+                            cardId: method === 'credit' ? document.getElementById('r-card').value : null,
                             type: document.getElementById('r-type').value, 
                             categoryId: document.getElementById('r-cat').value, 
                             lastProcessedMonth: null,
@@ -3122,6 +3270,8 @@
                 const rec = this.state.recurring.find(r => r.id === id);
                 if (!rec) return;
                 const catOpts = this.state.categories.map(c => `<option value="${c.id}" ${c.id === rec.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
+                const cardOpts = this.state.cards.map(c => `<option value="${c.id}" ${c.id === rec.cardId ? 'selected' : ''}>${this.escapeHTML(c.name)}</option>`).join('');
+                const showCredit = this.state.cards.length > 0 || rec.paymentMethod === 'credit';
 
                 let isSplitHtml = `
                     <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
@@ -3150,10 +3300,14 @@
                         <input id="r-day" type="number" min="1" max="31" class="swal2-input" value="${rec.day}">
                         
                         <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Método de Pagamento</label>
-                        <select id="r-method" class="swal2-select !mt-0 font-bold">
-                            <option value="pix" ${rec.paymentMethod === 'pix' ? 'selected' : ''}>Dinheiro / Pix</option>
+                        <select id="r-method" class="swal2-select !mt-0 font-bold" onchange="document.getElementById('r-card-container').classList.toggle('hidden', this.value !== 'credit')">
+                            <option value="pix" ${rec.paymentMethod === 'pix' || !rec.paymentMethod ? 'selected' : ''}>Dinheiro / Pix</option>
                             <option value="boleto" ${rec.paymentMethod === 'boleto' ? 'selected' : ''}>Boleto</option>
+                            ${showCredit ? `<option value="credit" ${rec.paymentMethod === 'credit' ? 'selected' : ''}>Cartão de Crédito</option>` : ''}
                         </select>
+                        <div id="r-card-container" class="${rec.paymentMethod === 'credit' ? '' : 'hidden'} mt-2">
+                            <select id="r-card" class="swal2-select !mt-0">${cardOpts}</select>
+                        </div>
 
                         <select id="r-type" class="swal2-select font-bold mt-4">
                             <option value="expense" ${rec.type === 'expense' ? 'selected' : ''}>Despesa Fixa</option>
@@ -3179,6 +3333,7 @@
                         let friends = [];
                         let myVal = 0;
                         let totalVal = Number(document.getElementById('r-val').value);
+                        const method = document.getElementById('r-method').value;
 
                         if (isSplit && document.getElementById('r-type').value === 'expense') {
                             document.querySelectorAll('.split-friend-item').forEach(div => {
@@ -3201,7 +3356,8 @@
                             description: document.getElementById('r-desc').value,
                             amount: totalVal,
                             day: Number(document.getElementById('r-day').value),
-                            paymentMethod: document.getElementById('r-method').value,
+                            paymentMethod: method,
+                            cardId: method === 'credit' ? document.getElementById('r-card').value : null,
                             type: document.getElementById('r-type').value,
                             categoryId: document.getElementById('r-cat').value,
                             isSplit: isSplit,
@@ -3221,13 +3377,16 @@
                             t.recurringId === id && t.date.startsWith(currentMonthKey) && !t.splitName
                         );
                         if (generatedTx) {
+                            const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                            const targetDay = Math.min(rec.day, lastDayOfMonth);
+                            const card = (rec.paymentMethod === 'credit' && rec.cardId) ? this.state.cards.find(c => c.id === rec.cardId) : null;
                             generatedTx.description = rec.description;
                             generatedTx.amount = rec.amount;
                             generatedTx.type = rec.type;
                             generatedTx.categoryId = rec.categoryId;
                             generatedTx.paymentMethod = rec.paymentMethod;
-                            const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-                            const targetDay = Math.min(rec.day, lastDayOfMonth);
+                            generatedTx.cardId = card ? card.id : null;
+                            generatedTx.invoiceMonth = card ? this.getInvoiceMonth(now.getFullYear(), now.getMonth() + 1, targetDay, card.closingDay, card.dueDay) : null;
                             generatedTx.date = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
                             if(rec.paymentMethod === 'boleto') generatedTx.dueDate = generatedTx.date;
                         }
