@@ -552,7 +552,6 @@
             });
         };
 
-        // Linhas de pagamento do Caderninho (plano de pagamentos com datas)
         window.addPayRow = function(date = '', val = '', paid = true) {
             const list = document.getElementById('pay-plan-list');
             if(!list) return;
@@ -615,14 +614,12 @@
                 return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
             },
 
-            // Soma n dias a uma data "YYYY-MM-DD"
             addDaysStr(str, n) {
                 const [y, m, d] = str.split('-').map(Number);
                 const dt = new Date(Date.UTC(y, m - 1, d + n));
                 return dt.toISOString().slice(0, 10);
             },
 
-            // Mês da fatura de uma compra no cartão
             getInvoiceMonth(y, mNum, dNum, cDay, dueDay) {
                 let tm = mNum; let ty = y;
                 if (dueDay < cDay) {
@@ -842,19 +839,16 @@
                     const cardRec = (rec.paymentMethod === 'credit' && rec.cardId) ? this.state.cards.find(c => c.id === rec.cardId) : null;
                     const invRec = cardRec ? this.getInvoiceMonth(now.getFullYear(), now.getMonth() + 1, targetDay, cardRec.closingDay, cardRec.dueDay) : null;
                     if (cardRec) {
-                        // Lançamentos deste mês criados antes do cartão ser vinculado: corrige a fatura
                         this.state.transactions.forEach(t => {
                             if (t.recurringId === rec.id && t.date.startsWith(currentMonthKey) && !t.cardId) {
                                 t.cardId = cardRec.id; t.invoiceMonth = invRec; t.paymentMethod = 'credit'; t.dueDate = null; added = true;
                             }
                         });
                     }
-                    // Conta no cartão já entra no mês (pelo menos na fatura), mesmo antes do dia de vencimento
                     if (rec.lastProcessedMonth !== currentMonthKey && (cardRec || todayNum >= targetDay)) {
                         
                         const dateStr = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
 
-                        // Se a conta é no cartão de crédito, cai na fatura correspondente
                         const card = (rec.paymentMethod === 'credit' && rec.cardId) ? this.state.cards.find(c => c.id === rec.cardId) : null;
                         const invMonth = card ? this.getInvoiceMonth(now.getFullYear(), now.getMonth() + 1, targetDay, card.closingDay, card.dueDay) : null;
 
@@ -938,7 +932,6 @@
             },
 
             renderDashboard() {
-                // Filtro vazio = todos os meses juntos (startsWith('') é sempre verdadeiro)
                 const filter = document.getElementById('dash-month-filter').value;
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
                 
@@ -960,7 +953,6 @@
                 const alertsDiv = document.getElementById('budget-alerts'); alertsDiv.innerHTML = '';
                 const expensesByCat = {}; monthTx.filter(t => t.type === 'expense').forEach(t => { expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount); });
 
-                // Limites só fazem sentido para um mês específico
                 if (filter) {
                     this.state.categories.filter(c => c.type === 'expense' && c.budgetLimit > 0).forEach(cat => {
                         const spent = expensesByCat[cat.id] || 0; const limit = Number(cat.budgetLimit); const pct = (spent / limit) * 100;
@@ -1815,7 +1807,6 @@
                             let invMonth = null;
                             if (card) invMonth = getInvoiceMonth(currYear, currMonth, targetDay, card.closingDay, card.dueDay);
 
-                            // Boleto parcelado: 1º vencimento escolhido + N dias entre cada boleto
                             let currentBoletoDue = null;
                             if (formValues.paymentMethod === 'boleto') {
                                 currentBoletoDue = this.addDaysStr(formValues.boletoDue, (i - 1) * formValues.boletoInterval);
@@ -2317,7 +2308,6 @@
                         const isPayment = cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
                         
                         if (isPayment) {
-                            // Só desconta do que já foi pago (agendados ainda não entraram no saldo)
                             if (tx.isPaid) {
                                 debt.paidAmount -= tx.amount;
                                 if (debt.paidAmount < 0) debt.paidAmount = 0;
@@ -2658,7 +2648,6 @@
                 });
             },
 
-            // Marcar como pago / não pago. Em pagamentos de dívida, também atualiza o saldo quitado.
             togglePaid(id) {
                 const tx = this.state.transactions.find(t => t.id === id);
                 if(!tx) return;
@@ -2756,7 +2745,6 @@
                 }
             },
             
-            // Pagamento/recebimento com um ou vários pagamentos agendados em datas diferentes
             async payDebt(id) {
                 const debt = this.state.debts.find(d => d.id === id); 
                 const remaining = debt.totalAmount - debt.paidAmount;
@@ -2908,7 +2896,6 @@
                         badge = isOwesMe ? '<span class="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-[10px] font-black">A RECEBER</span>' : '<span class="text-rose-600 bg-rose-50 dark:text-rose-400 dark:bg-rose-900/20 px-2 py-0.5 rounded text-[10px] font-black">A PAGAR</span>';
                     }
 
-                    // Pagamentos agendados (não pagos) — filtrados pelo mês escolhido, se houver
                     const sched = this.state.transactions
                         .filter(t => t.debtId === d.id && !t.isPaid && t.description.includes('[Agendado]') && t.date.startsWith(m))
                         .sort((a, b) => a.date.localeCompare(b.date));
