@@ -772,13 +772,7 @@
 
             updateStatusIcon() {
                 let iconUrl;
-                const debtsTab = document.getElementById('debts');
-                if (debtsTab && debtsTab.classList.contains('active')) {
-                    // Na aba Caderninho: gatinho feliz (1) se não há pagamentos agendados pendentes no mês escolhido; triste (2) se há.
-                    const m = document.getElementById('debts-month-filter')?.value || '';
-                    const pending = this.state.transactions.some(t => t.debtId && !t.isPaid && t.description.includes('[Agendado]') && t.date.startsWith(m));
-                    iconUrl = pending ? '2.png' : '1.png';
-                } else {
+                {
                     const d = new Date();
                     const nowMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
                     const validTx = this.state.transactions.filter(t => t.date.startsWith(nowMonth));
@@ -845,7 +839,18 @@
                 let added = false;
                 this.state.recurring.forEach(rec => {
                     const targetDay = Math.min(rec.day, lastDayOfMonth);
-                    if (rec.lastProcessedMonth !== currentMonthKey && todayNum >= targetDay) {
+                    const cardRec = (rec.paymentMethod === 'credit' && rec.cardId) ? this.state.cards.find(c => c.id === rec.cardId) : null;
+                    const invRec = cardRec ? this.getInvoiceMonth(now.getFullYear(), now.getMonth() + 1, targetDay, cardRec.closingDay, cardRec.dueDay) : null;
+                    if (cardRec) {
+                        // Lançamentos deste mês criados antes do cartão ser vinculado: corrige a fatura
+                        this.state.transactions.forEach(t => {
+                            if (t.recurringId === rec.id && t.date.startsWith(currentMonthKey) && !t.cardId) {
+                                t.cardId = cardRec.id; t.invoiceMonth = invRec; t.paymentMethod = 'credit'; t.dueDate = null; added = true;
+                            }
+                        });
+                    }
+                    // Conta no cartão já entra no mês (pelo menos na fatura), mesmo antes do dia de vencimento
+                    if (rec.lastProcessedMonth !== currentMonthKey && (cardRec || todayNum >= targetDay)) {
                         
                         const dateStr = `${currentMonthKey}-${String(targetDay).padStart(2, '0')}`;
 
