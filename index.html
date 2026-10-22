@@ -1706,7 +1706,7 @@
                             friendsMap[name].totalPending += Number(t.amount);
                         }
                         
-                        // Determina o mês de referência: fatura do cartão (invoiceMonth) ou mês da data
+                        // Mês de referência: fatura do cartão (invoiceMonth) ou mês da data
                         const monthKey = t.invoiceMonth ? t.invoiceMonth : t.date.slice(0, 7);
                         if (!friendsMap[name].byMonth[monthKey]) {
                             friendsMap[name].byMonth[monthKey] = { totalPending: 0, items: [] };
@@ -1724,18 +1724,83 @@
                     return;
                 }
 
+                // Calcula o "mês atual de referência" (YYYY-MM) para saber qual fatura é a próxima a pagar
+                const today = new Date();
+                const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+                // Considera como "próxima fatura" o menor mês >= hoje; se não houver, o menor mês futuro/qualquer
+                const monthKeyToSortValue = (key) => {
+                    const [y, m] = key.split('-').map(Number);
+                    return y * 12 + (m - 1);
+                };
+                const todayValue = monthKeyToSortValue(todayKey);
+
                 Object.keys(friendsMap).forEach(name => {
                     const data = friendsMap[name];
                     
-                    // Ordena os meses (mais recente primeiro)
-                    const monthKeys = Object.keys(data.byMonth).sort((a, b) => b.localeCompare(a));
-                    
+                    // Ordena os meses: 
+                    // 1) meses >= hoje primeiro, do mais próximo ao mais distante (fatura mais próxima primeiro);
+                    // 2) depois meses passados, do mais recente ao mais antigo.
+                    const monthKeys = Object.keys(data.byMonth).sort((a, b) => {
+                        const va = monthKeyToSortValue(a);
+                        const vb = monthKeyToSortValue(b);
+                        const aFuture = va >= todayValue;
+                        const bFuture = vb >= todayValue;
+                        if (aFuture && bFuture) return va - vb;        // próximos primeiro
+                        if (!aFuture && !bFuture) return vb - va;      // passados: mais recente primeiro
+                        return aFuture ? -1 : 1;                       // futuros antes de passados
+                    });
+
+                    // Descobre qual é o mês da "próxima fatura" para abrir automaticamente
+                    let nextInvoiceKey = null;
+                    for (const k of monthKeys) {
+                        if (monthKeyToSortValue(k) >= todayValue && data.byMonth[k].totalPending > 0) {
+                            nextInvoiceKey = k;
+                            break;
+                        }
+                    }
+                    if (!nextInvoiceKey) {
+                        // Se não achar futuro pendente, pega o primeiro mês com pendência
+                        const withPending = monthKeys.find(k => data.byMonth[k].totalPending > 0);
+                        nextInvoiceKey = withPending || monthKeys[0];
+                    }
+
                     let monthsHtml = '';
                     monthKeys.forEach(monthKey => {
                         const monthData = data.byMonth[monthKey];
                         const [yy, mm] = monthKey.split('-');
                         const monthLabel = `${mm}/${yy}`;
-                        
+                        const v = monthKeyToSortValue(monthKey);
+                        const isPast = v < todayValue;
+                        const isNextInvoice = monthKey === nextInvoiceKey;
+                        const isOpen = monthData.totalPending > 0;
+                        const allPaid = monthData.items.every(t => t.friendHasPaid === true);
+
+                        // Badge de status do mês
+                        let monthBadge = '';
+                        if (isNextInvoice && isOpen) {
+                            monthBadge = `<span class="text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full ml-2">PRÓXIMA FATURA</span>`;
+                        } else if (!isOpen) {
+                            monthBadge = `<span class="text-[9px] font-black text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full ml-2">PAGA</span>`;
+                        } else if (isPast) {
+                            monthBadge = `<span class="text-[9px] font-black text-rose-600 bg-rose-100 dark:text-rose-400 dark:bg-rose-900/30 px-2 py-0.5 rounded-full ml-2">ATRASADA</span>`;
+                        } else {
+                            monthBadge = `<span class="text-[9px] font-black text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 px-2 py-0.5 rounded-full ml-2">EM ABERTO</span>`;
+                        }
+
+                        // Classes visuais do cabeçalho do mês
+                        let headerClasses = 'bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60';
+                        let borderClasses = 'border-slate-100 dark:border-slate-700/60';
+                        if (isNextInvoice && isOpen) {
+                            headerClasses = 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40';
+                            borderClasses = 'border-indigo-300 dark:border-indigo-700';
+                        } else if (!isOpen) {
+                            headerClasses = 'bg-emerald-50/60 dark:bg-emerald-900/10 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
+                            borderClasses = 'border-emerald-200 dark:border-emerald-800/50';
+                        } else if (isPast) {
+                            headerClasses = 'bg-rose-50/60 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20';
+                            borderClasses = 'border-rose-200 dark:border-rose-800/50';
+                        }
+
                         // Ordena itens do mês (pendentes primeiro, depois por data decrescente)
                         monthData.items.sort((a, b) => {
                             const aPaid = a.friendHasPaid || false;
@@ -1765,7 +1830,7 @@
                                 actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 bg-slate-100 hover:text-emerald-500 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
                             }
                             
-                            return `<div class="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-700 py-2 ${isFriendPaid ? 'opacity-60' : ''}">
+                            return `<div class="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-700 py-2 last:border-0 ${isFriendPaid ? 'opacity-60' : ''}">
                                 <div class="flex flex-col min-w-0 pr-2">
                                     <div class="flex items-center flex-wrap gap-1">
                                         <span class="truncate text-slate-700 dark:text-slate-200 font-bold ${isFriendPaid ? 'line-through' : ''}">${this.escapeHTML(desc)}</span>
@@ -1784,16 +1849,22 @@
                         }).join('');
 
                         const monthPending = monthData.totalPending;
+                        const monthCollapseId = `friend-month-${name.replace(/\s/g, '')}-${monthKey}`;
+                        const isExpanded = isNextInvoice;
+
                         monthsHtml += `
-                            <div class="border border-slate-100 dark:border-slate-700/60 rounded-xl overflow-hidden mb-2">
-                                <div onclick="document.getElementById('friend-month-${name.replace(/\s/g, '')}-${monthKey}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/40 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors">
-                                    <span class="font-black text-sm text-slate-700 dark:text-slate-200">${monthLabel}</span>
-                                    <div class="flex items-center gap-2">
+                            <div class="border ${borderClasses} rounded-xl overflow-hidden mb-2">
+                                <div onclick="document.getElementById('${monthCollapseId}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex justify-between items-center p-3 ${headerClasses} cursor-pointer transition-colors">
+                                    <div class="flex items-center flex-wrap gap-1 min-w-0">
+                                        <span class="font-black text-sm text-slate-700 dark:text-slate-200">${monthLabel}</span>
+                                        ${monthBadge}
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-shrink-0">
                                         <span class="font-black text-sm ${monthPending > 0 ? 'text-rose-500' : 'text-emerald-500'}">${this.formatCurrency(monthPending)}</span>
-                                        <i class="ph ph-caret-down text-slate-400 transition-transform duration-300"></i>
+                                        <i class="ph ph-caret-down text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}"></i>
                                     </div>
                                 </div>
-                                <div id="friend-month-${name.replace(/\s/g, '')}-${monthKey}" class="hidden flex-col bg-white dark:bg-slate-800 px-3 py-1">
+                                <div id="${monthCollapseId}" class="${isExpanded ? 'flex' : 'hidden'} flex-col bg-white dark:bg-slate-800 px-3 py-1">
                                     ${itemsHtml}
                                 </div>
                             </div>
