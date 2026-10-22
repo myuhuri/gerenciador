@@ -247,6 +247,27 @@
                     <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle o valor total que cada pessoa deve no seu cartão, separado por mês.</p>
                 </div>
             </div>
+
+            <!-- Filtros e ordenação -->
+            <div class="card !p-4 flex flex-col sm:flex-row gap-3 w-full items-stretch">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <i class="ph ph-funnel text-slate-400 flex-shrink-0"></i>
+                    <select id="friends-filter" class="date-pill !px-3 !py-2.5 !font-normal flex-1 min-w-0" onchange="app.renderFriends()">
+                        <option value="all">Ver todos</option>
+                        <option value="pending">Só pendentes</option>
+                        <option value="paid">Só pagos</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <i class="ph ph-sort-ascending text-slate-400 flex-shrink-0"></i>
+                    <select id="friends-sort" class="date-pill !px-3 !py-2.5 !font-normal flex-1 min-w-0" onchange="app.renderFriends()">
+                        <option value="debt">Maior dívida</option>
+                        <option value="name">Nome (A–Z)</option>
+                        <option value="next">Próxima fatura</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="grid-auto-fit-lg w-full" id="friends-container"></div>
         </section>
 
@@ -1680,16 +1701,76 @@
                 }
             },
 
+            async markMonthAsPaid(name, monthKey) {
+                const thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
+                if (!thirdCat) return;
+                const txs = this.state.transactions.filter(t => 
+                    t.cardId && t.categoryId === thirdCat.id && t.splitName === name &&
+                    (t.invoiceMonth ? t.invoiceMonth === monthKey : t.date.slice(0,7) === monthKey) &&
+                    !t.friendHasPaid
+                );
+                if (txs.length === 0) {
+                    Swal.fire('Ops!', 'Não há parcelas pendentes neste mês.', 'info');
+                    return;
+                }
+                const total = txs.reduce((s, t) => s + Number(t.amount), 0);
+                const res = await Swal.fire({
+                    title: 'Confirmar Pagamento do Mês',
+                    html: `Marcar todas as <b>${txs.length}</b> parcelas pendentes de <b>${this.escapeHTML(name)}</b> em <b>${monthKey.split('-').reverse().join('/')}</b> como pagas?<br><br>Total: <b class="text-emerald-500">${this.formatCurrency(total)}</b>`,
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sim, recebi',
+                    cancelButtonText: 'Cancelar',
+                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500' }
+                });
+                if (!res.isConfirmed) return;
+
+                let rCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                if (!rCat) {
+                    rCat = { id: this.generateId(), name: 'Recebimento de Dívida', icon: '🤑', type: 'income', budgetLimit: 0 };
+                    this.state.categories.push(rCat);
+                }
+
+                txs.forEach(tx => {
+                    tx.friendHasPaid = true;
+                    if (tx.debtId) {
+                        const debt = this.state.debts.find(d => d.id === tx.debtId);
+                        if (debt) debt.paidAmount += tx.amount;
+                    }
+                    let instMatch = tx.description.match(/(\(\d+\/\d+\))/);
+                    let instStr = instMatch ? ' ' + instMatch[1] : '';
+                    this.state.transactions.push({
+                        id: this.generateId(),
+                        debtId: tx.debtId,
+                        description: `Pagamento: Divisão c/ ${tx.splitName}${instStr}`,
+                        amount: tx.amount,
+                        date: new Date().toISOString().split('T')[0],
+                        type: 'income',
+                        categoryId: rCat.id,
+                        isPaid: true
+                    });
+                });
+
+                this.saveData();
+                this.renderFriends();
+                if (document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Mês recebido!', showConfirmButton: false, timer: 1800 });
+            },
+
             renderFriends() {
                 const container = document.getElementById('friends-container');
                 if(!container) return;
                 container.innerHTML = '';
 
-                let thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
+                const thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
                 if (!thirdCat) {
                     container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma compra de terceiros registrada.</div>';
                     return;
                 }
+
+                // Filtros
+                const filterMode = (document.getElementById('friends-filter') || {}).value || 'all';
+                const sortMode = (document.getElementById('friends-sort') || {}).value || 'debt';
 
                 const friendsMap = {};
 
@@ -1700,57 +1781,81 @@
                             const match = t.description.replace(/\s*\(\d+\/\d+\)$/, '').match(/\(([^)]+)\)$/);
                             name = match ? match[1] : 'Desconhecido';
                         }
-                        if (!friendsMap[name]) friendsMap[name] = { totalPending: 0, items: [], byMonth: {} };
+                        if (!friendsMap[name]) friendsMap[name] = { totalPending: 0, totalPaid: 0, items: [], byMonth: {} };
                         
                         if (!t.friendHasPaid) {
                             friendsMap[name].totalPending += Number(t.amount);
+                        } else {
+                            friendsMap[name].totalPaid += Number(t.amount);
                         }
                         
-                        // Mês de referência: fatura do cartão (invoiceMonth) ou mês da data
                         const monthKey = t.invoiceMonth ? t.invoiceMonth : t.date.slice(0, 7);
                         if (!friendsMap[name].byMonth[monthKey]) {
-                            friendsMap[name].byMonth[monthKey] = { totalPending: 0, items: [] };
+                            friendsMap[name].byMonth[monthKey] = { totalPending: 0, totalPaid: 0, items: [] };
                         }
                         if (!t.friendHasPaid) {
                             friendsMap[name].byMonth[monthKey].totalPending += Number(t.amount);
+                        } else {
+                            friendsMap[name].byMonth[monthKey].totalPaid += Number(t.amount);
                         }
                         friendsMap[name].byMonth[monthKey].items.push(t);
                         friendsMap[name].items.push(t);
                     }
                 });
 
-                if (Object.keys(friendsMap).length === 0) {
-                    container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhum amigo registrado no cartão. 🎉</div>';
+                // Aplica filtro
+                let friendNames = Object.keys(friendsMap);
+                if (filterMode === 'pending') {
+                    friendNames = friendNames.filter(n => friendsMap[n].totalPending > 0);
+                } else if (filterMode === 'paid') {
+                    friendNames = friendNames.filter(n => friendsMap[n].totalPending === 0 && friendsMap[n].totalPaid > 0);
+                }
+
+                if (friendNames.length === 0) {
+                    container.innerHTML = `<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">${filterMode === 'all' ? 'Nenhum amigo registrado no cartão. 🎉' : 'Nenhum resultado para este filtro.'}</div>`;
                     return;
                 }
 
-                // Calcula o "mês atual de referência" (YYYY-MM) para saber qual fatura é a próxima a pagar
+                // Ordenação
                 const today = new Date();
                 const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-                // Considera como "próxima fatura" o menor mês >= hoje; se não houver, o menor mês futuro/qualquer
                 const monthKeyToSortValue = (key) => {
                     const [y, m] = key.split('-').map(Number);
                     return y * 12 + (m - 1);
                 };
                 const todayValue = monthKeyToSortValue(todayKey);
 
-                Object.keys(friendsMap).forEach(name => {
+                const getNextInvoiceValue = (name) => {
+                    const months = Object.keys(friendsMap[name].byMonth)
+                        .filter(k => friendsMap[name].byMonth[k].totalPending > 0)
+                        .map(k => monthKeyToSortValue(k));
+                    const future = months.filter(v => v >= todayValue).sort((a,b) => a-b);
+                    return future.length ? future[0] : (months.length ? Math.min(...months) : Infinity);
+                };
+
+                friendNames.sort((a, b) => {
+                    if (sortMode === 'name') return a.localeCompare(b, 'pt-BR');
+                    if (sortMode === 'debt') return friendsMap[b].totalPending - friendsMap[a].totalPending;
+                    if (sortMode === 'next') return getNextInvoiceValue(a) - getNextInvoiceValue(b);
+                    return 0;
+                });
+
+                // Total geral para mini gráfico de proporção
+                const grandTotalPending = friendNames.reduce((s, n) => s + friendsMap[n].totalPending, 0);
+
+                friendNames.forEach(name => {
                     const data = friendsMap[name];
                     
-                    // Ordena os meses: 
-                    // 1) meses >= hoje primeiro, do mais próximo ao mais distante (fatura mais próxima primeiro);
-                    // 2) depois meses passados, do mais recente ao mais antigo.
                     const monthKeys = Object.keys(data.byMonth).sort((a, b) => {
                         const va = monthKeyToSortValue(a);
                         const vb = monthKeyToSortValue(b);
                         const aFuture = va >= todayValue;
                         const bFuture = vb >= todayValue;
-                        if (aFuture && bFuture) return va - vb;        // próximos primeiro
-                        if (!aFuture && !bFuture) return vb - va;      // passados: mais recente primeiro
-                        return aFuture ? -1 : 1;                       // futuros antes de passados
+                        if (aFuture && bFuture) return va - vb;
+                        if (!aFuture && !bFuture) return vb - va;
+                        return aFuture ? -1 : 1;
                     });
 
-                    // Descobre qual é o mês da "próxima fatura" para abrir automaticamente
                     let nextInvoiceKey = null;
                     for (const k of monthKeys) {
                         if (monthKeyToSortValue(k) >= todayValue && data.byMonth[k].totalPending > 0) {
@@ -1759,55 +1864,70 @@
                         }
                     }
                     if (!nextInvoiceKey) {
-                        // Se não achar futuro pendente, pega o primeiro mês com pendência
                         const withPending = monthKeys.find(k => data.byMonth[k].totalPending > 0);
                         nextInvoiceKey = withPending || monthKeys[0];
                     }
 
-                    let monthsHtml = '';
-                    monthKeys.forEach(monthKey => {
+                    // Classifica meses em: destaque (mês atual/próximo ou com pendência recente) vs colapsados (passados distantes + futuros distantes)
+                    const visibleMonthKeys = [];
+                    const collapsedMonthKeys = [];
+                    monthKeys.forEach(k => {
+                        const v = monthKeyToSortValue(k);
+                        const md = data.byMonth[k];
+                        const isNext = k === nextInvoiceKey;
+                        const hasPending = md.totalPending > 0;
+                        const isCurrentOrFuture = v >= todayValue;
+                        // Mostra: mês da próxima fatura, qualquer mês futuro com pendência nos próximos 2 meses, e mês atual
+                        if (isNext) { visibleMonthKeys.push(k); return; }
+                        if (isCurrentOrFuture && hasPending && (v - todayValue) <= 2) { visibleMonthKeys.push(k); return; }
+                        if (!isCurrentOrFuture && hasPending && (todayValue - v) <= 1) { visibleMonthKeys.push(k); return; }
+                        collapsedMonthKeys.push(k);
+                    });
+
+                    const renderMonth = (monthKey, forceOpen = false) => {
                         const monthData = data.byMonth[monthKey];
                         const [yy, mm] = monthKey.split('-');
                         const monthLabel = `${mm}/${yy}`;
                         const v = monthKeyToSortValue(monthKey);
                         const isPast = v < todayValue;
                         const isNextInvoice = monthKey === nextInvoiceKey;
-                        const isOpen = monthData.totalPending > 0;
-                        const allPaid = monthData.items.every(t => t.friendHasPaid === true);
+                        const hasPending = monthData.totalPending > 0;
+                        const isFullyPaid = monthData.totalPaid > 0 && monthData.totalPending === 0;
 
-                        // Badge de status do mês
                         let monthBadge = '';
-                        if (isNextInvoice && isOpen) {
-                            monthBadge = `<span class="text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full ml-2">PRÓXIMA FATURA</span>`;
-                        } else if (!isOpen) {
-                            monthBadge = `<span class="text-[9px] font-black text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full ml-2">PAGA</span>`;
-                        } else if (isPast) {
-                            monthBadge = `<span class="text-[9px] font-black text-rose-600 bg-rose-100 dark:text-rose-400 dark:bg-rose-900/30 px-2 py-0.5 rounded-full ml-2">ATRASADA</span>`;
-                        } else {
-                            monthBadge = `<span class="text-[9px] font-black text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900/30 px-2 py-0.5 rounded-full ml-2">EM ABERTO</span>`;
+                        if (isNextInvoice && hasPending) {
+                            monthBadge = `<span class="text-[9px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded-full ml-2 whitespace-nowrap">PRÓXIMA</span>`;
+                        } else if (isFullyPaid) {
+                            monthBadge = `<span class="text-[9px] font-black text-emerald-600 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full ml-2 whitespace-nowrap"><i class="ph ph-check"></i> PAGO</span>`;
+                        } else if (isPast && hasPending) {
+                            monthBadge = `<span class="text-[9px] font-black text-rose-600 bg-rose-100 dark:text-rose-300 dark:bg-rose-900/40 px-2 py-0.5 rounded-full ml-2 whitespace-nowrap">ATRASADO</span>`;
+                        } else if (hasPending) {
+                            monthBadge = `<span class="text-[9px] font-black text-amber-600 bg-amber-100 dark:text-amber-300 dark:bg-amber-900/40 px-2 py-0.5 rounded-full ml-2 whitespace-nowrap">EM ABERTO</span>`;
                         }
 
-                        // Classes visuais do cabeçalho do mês
                         let headerClasses = 'bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60';
                         let borderClasses = 'border-slate-100 dark:border-slate-700/60';
-                        if (isNextInvoice && isOpen) {
+                        let valueColor = hasPending ? 'text-rose-500' : 'text-emerald-500';
+                        if (isNextInvoice && hasPending) {
                             headerClasses = 'bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/40';
                             borderClasses = 'border-indigo-300 dark:border-indigo-700';
-                        } else if (!isOpen) {
+                        } else if (isFullyPaid) {
                             headerClasses = 'bg-emerald-50/60 dark:bg-emerald-900/10 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
                             borderClasses = 'border-emerald-200 dark:border-emerald-800/50';
-                        } else if (isPast) {
+                            valueColor = 'text-emerald-500';
+                        } else if (isPast && hasPending) {
                             headerClasses = 'bg-rose-50/60 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20';
                             borderClasses = 'border-rose-200 dark:border-rose-800/50';
+                        } else if (hasPending) {
+                            headerClasses = 'bg-amber-50/60 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20';
+                            borderClasses = 'border-amber-200 dark:border-amber-800/50';
+                            valueColor = 'text-amber-600 dark:text-amber-400';
                         }
 
-                        // Ordena itens do mês (pendentes primeiro, depois por data decrescente)
                         monthData.items.sort((a, b) => {
                             const aPaid = a.friendHasPaid || false;
                             const bPaid = b.friendHasPaid || false;
-                            if (aPaid === bPaid) {
-                                return new Date(b.date) - new Date(a.date);
-                            }
+                            if (aPaid === bPaid) return new Date(b.date) - new Date(a.date);
                             return aPaid ? 1 : -1;
                         });
 
@@ -1825,9 +1945,9 @@
                             
                             let actionBtn = '';
                             if (isFriendPaid) {
-                                actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/40 transition-colors" title="Desfazer"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
+                                actionBtn = `<button onclick="event.stopPropagation(); app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/40 transition-colors" title="Desfazer"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
                             } else {
-                                actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 bg-slate-100 hover:text-emerald-500 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
+                                actionBtn = `<button onclick="event.stopPropagation(); app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 bg-slate-100 hover:text-emerald-500 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
                             }
                             
                             return `<div class="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-700 py-2 last:border-0 ${isFriendPaid ? 'opacity-60' : ''}">
@@ -1850,17 +1970,23 @@
 
                         const monthPending = monthData.totalPending;
                         const monthCollapseId = `friend-month-${name.replace(/\s/g, '')}-${monthKey}`;
-                        const isExpanded = isNextInvoice;
+                        const isExpanded = forceOpen || isNextInvoice;
 
-                        monthsHtml += `
+                        let payAllBtn = '';
+                        if (hasPending) {
+                            payAllBtn = `<button onclick="event.stopPropagation(); app.markMonthAsPaid('${this.escapeHTML(name).replace(/'/g, "&#39;")}', '${monthKey}')" class="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 px-2 py-1 rounded-full whitespace-nowrap transition-colors" title="Marcar tudo como pago"><i class="ph ph-check-square"></i> Pagar Tudo</button>`;
+                        }
+
+                        return `
                             <div class="border ${borderClasses} rounded-xl overflow-hidden mb-2">
-                                <div onclick="document.getElementById('${monthCollapseId}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex justify-between items-center p-3 ${headerClasses} cursor-pointer transition-colors">
+                                <div onclick="document.getElementById('${monthCollapseId}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex justify-between items-center p-3 ${headerClasses} cursor-pointer transition-colors gap-2">
                                     <div class="flex items-center flex-wrap gap-1 min-w-0">
                                         <span class="font-black text-sm text-slate-700 dark:text-slate-200">${monthLabel}</span>
                                         ${monthBadge}
                                     </div>
                                     <div class="flex items-center gap-2 flex-shrink-0">
-                                        <span class="font-black text-sm ${monthPending > 0 ? 'text-rose-500' : 'text-emerald-500'}">${this.formatCurrency(monthPending)}</span>
+                                        ${payAllBtn}
+                                        <span class="font-black text-sm ${valueColor}">${this.formatCurrency(monthPending)}</span>
                                         <i class="ph ph-caret-down text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}"></i>
                                     </div>
                                 </div>
@@ -1869,16 +1995,52 @@
                                 </div>
                             </div>
                         `;
-                    });
+                    };
+
+                    let monthsHtml = visibleMonthKeys.map(k => renderMonth(k)).join('');
+
+                    if (collapsedMonthKeys.length > 0) {
+                        const collapseId = `friend-collapsed-${name.replace(/\s/g, '')}`;
+                        const pastCount = collapsedMonthKeys.filter(k => monthKeyToSortValue(k) < todayValue).length;
+                        const futureCount = collapsedMonthKeys.filter(k => monthKeyToSortValue(k) >= todayValue).length;
+                        const labelParts = [];
+                        if (pastCount > 0) labelParts.push(`${pastCount} mês(es) anterior(es)`);
+                        if (futureCount > 0) labelParts.push(`${futureCount} mês(es) futuro(s)`);
+                        
+                        monthsHtml += `
+                            <div class="mt-2">
+                                <button onclick="document.getElementById('${collapseId}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="w-full text-center text-[10px] sm:text-xs font-bold text-indigo-500 hover:text-indigo-600 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 rounded-xl transition-colors flex items-center justify-center gap-1">
+                                    <i class="ph ph-caret-down transition-transform duration-300"></i> Ver ${labelParts.join(' + ')}
+                                </button>
+                                <div id="${collapseId}" class="hidden mt-2 flex-col">
+                                    ${collapsedMonthKeys.map(k => renderMonth(k, false)).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Mini gráfico de proporção no header
+                    const pctOfTotal = grandTotalPending > 0 ? (data.totalPending / grandTotalPending) * 100 : 0;
+                    const barWidth = Math.max(2, Math.min(100, pctOfTotal));
+                    const barColor = data.totalPending > 0 ? 'bg-indigo-500' : 'bg-emerald-500';
 
                     container.innerHTML += `
                         <div class="card p-5 flex flex-col gap-2 relative overflow-hidden border border-slate-100 dark:border-slate-700/60 shadow-md">
                             <div class="absolute top-0 left-0 w-full h-1.5 bg-indigo-500"></div>
-                            <div class="flex justify-between items-center mb-1 mt-1">
-                                <h3 class="font-black text-xl text-slate-800 dark:text-white flex items-center gap-2 truncate pr-2"><i class="ph ph-user-circle text-indigo-500 text-2xl"></i> ${this.escapeHTML(name)}</h3>
-                                <div class="text-right flex flex-col">
-                                    <span class="font-black ${data.totalPending > 0 ? 'text-rose-500' : 'text-emerald-500'} text-lg flex-shrink-0">${this.formatCurrency(data.totalPending)}</span>
+                            <div class="flex justify-between items-start mb-1 mt-1 gap-2">
+                                <h3 class="font-black text-xl text-slate-800 dark:text-white flex items-center gap-2 truncate pr-2"><i class="ph ph-user-circle text-indigo-500 text-2xl flex-shrink-0"></i> ${this.escapeHTML(name)}</h3>
+                                <div class="text-right flex flex-col flex-shrink-0">
+                                    <span class="font-black ${data.totalPending > 0 ? 'text-rose-500' : 'text-emerald-500'} text-lg">${this.formatCurrency(data.totalPending)}</span>
                                     <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Total Pendente</span>
+                                </div>
+                            </div>
+                            <div class="w-full">
+                                <div class="flex justify-between text-[9px] font-bold text-slate-400 mb-1">
+                                    <span>${pctOfTotal.toFixed(0)}% do total pendente</span>
+                                    <span>${this.formatCurrency(data.totalPending)}</span>
+                                </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
+                                    <div class="${barColor} h-1.5 rounded-full transition-all" style="width: ${barWidth}%"></div>
                                 </div>
                             </div>
                             <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
