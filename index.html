@@ -244,7 +244,7 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div class="w-full sm:w-auto">
                     <h2 class="text-3xl md:text-4xl font-black text-slate-800 dark:text-white truncate">Amigos no Cartão</h2>
-                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle o valor total que cada pessoa deve no seu cartão.</p>
+                    <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium text-sm md:text-base truncate">Controle o valor total que cada pessoa deve no seu cartão, separado por mês.</p>
                 </div>
             </div>
             <div class="grid-auto-fit-lg w-full" id="friends-container"></div>
@@ -446,8 +446,6 @@
             { id: 'c5', name: 'Transporte', icon: '🚗', type: 'expense', budgetLimit: 0 }
         ];
 
-        // Quantidade de parcelas do formulário atual (1 = à vista).
-        // Funciona tanto na Nova Transação (checkbox "É parcelada?") quanto na edição (campo direto).
         window.currentInstCount = function () {
             const cb = document.getElementById('swal-tx-is-installment');
             if (cb && cb.type === 'checkbox' && !cb.checked) return 1;
@@ -629,7 +627,6 @@
                 return dt.toISOString().slice(0, 10);
             },
 
-            // Soma k meses a uma data YYYY-MM-DD, mantendo o dia (ou o último dia do mês, se não existir)
             addMonthsClamped(dateStr, k) {
                 const [y, m, d] = dateStr.split('-').map(Number);
                 const total = y * 12 + (m - 1) + k;
@@ -669,7 +666,6 @@
                 return !!t.isAdvance || (t.description || '').startsWith('Adiantamento:');
             },
 
-            // Descrição base da compra (sem parcela, sem "(Minha parte)" e sem o nome do amigo)
             baseDescOf(t) {
                 if (t.purchaseDesc) return t.purchaseDesc;
                 let d = t.description.replace(/\s*\(\d+\/\d+\)$/, '');
@@ -683,7 +679,6 @@
                 return m ? Number(m[2]) : 1;
             },
 
-            // Reúne todos os lançamentos que pertencem à mesma compra
             collectPurchase(tx) {
                 const all = this.state.transactions;
                 let txs;
@@ -697,7 +692,6 @@
                 } else {
                     txs = [tx];
                 }
-                // Inclui pagamentos e adiantamentos ligados às dívidas dos amigos desta compra
                 if (txs.some(t => t.splitName)) {
                     const debtIds = new Set(txs.map(t => t.debtId).filter(Boolean));
                     txs = all.filter(t => txs.includes(t) || (t.debtId && debtIds.has(t.debtId)));
@@ -705,7 +699,6 @@
                 return txs;
             },
 
-            // Lê o formulário de compra (usado por Nova Transação e Editar)
             readPurchaseForm() {
                 const g = id => document.getElementById(id);
                 const type = g('swal-tx-type').value;
@@ -751,20 +744,21 @@
                 return v;
             },
 
-            // Cria todos os lançamentos de uma compra (à vista, parcelada, dividida ou não).
-            // Cada parcela recebe sua própria data e fatura, calculadas a partir da data da compra.
             savePurchase(v, purchaseId = this.generateId()) {
                 const n = Math.max(1, Number(v.instCount) || 1);
                 const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
                 const total = Number(v.val) * mult;
                 const card = v.paymentMethod === 'credit' && v.cardId ? this.state.cards.find(c => c.id === v.cardId) : null;
 
-                const friends = v.isSplit ? v.friends.map(f => ({
-                    name: f.name,
-                    total: Number(f.val) * mult,
-                    paid: Number(f.paidCount) || 0,
-                    debtId: f.debtId || this.generateId()
-                })) : [];
+                const friends = v.isSplit ? v.friends.map(f => {
+                    if (f.name && !this.state.friends.includes(f.name)) this.state.friends.push(f.name);
+                    return {
+                        name: f.name,
+                        total: Number(f.val) * mult,
+                        paid: Number(f.paidCount) || 0,
+                        debtId: f.debtId || this.generateId()
+                    };
+                }) : [];
 
                 const myTotal = total - friends.reduce((s, f) => s + f.total, 0);
                 const thirdCat = friends.length ? this.ensureCategory('Compra de Terceiros', '🤝', 'expense') : null;
@@ -1706,11 +1700,21 @@
                             const match = t.description.replace(/\s*\(\d+\/\d+\)$/, '').match(/\(([^)]+)\)$/);
                             name = match ? match[1] : 'Desconhecido';
                         }
-                        if (!friendsMap[name]) friendsMap[name] = { totalPending: 0, items: [] };
+                        if (!friendsMap[name]) friendsMap[name] = { totalPending: 0, items: [], byMonth: {} };
                         
                         if (!t.friendHasPaid) {
                             friendsMap[name].totalPending += Number(t.amount);
                         }
+                        
+                        // Determina o mês de referência: fatura do cartão (invoiceMonth) ou mês da data
+                        const monthKey = t.invoiceMonth ? t.invoiceMonth : t.date.slice(0, 7);
+                        if (!friendsMap[name].byMonth[monthKey]) {
+                            friendsMap[name].byMonth[monthKey] = { totalPending: 0, items: [] };
+                        }
+                        if (!t.friendHasPaid) {
+                            friendsMap[name].byMonth[monthKey].totalPending += Number(t.amount);
+                        }
+                        friendsMap[name].byMonth[monthKey].items.push(t);
                         friendsMap[name].items.push(t);
                     }
                 });
@@ -1723,60 +1727,78 @@
                 Object.keys(friendsMap).forEach(name => {
                     const data = friendsMap[name];
                     
-                    data.items.sort((a, b) => {
-                        const aPaid = a.friendHasPaid || false;
-                        const bPaid = b.friendHasPaid || false;
-                        if (aPaid === bPaid) {
-                            return new Date(b.date) - new Date(a.date);
-                        }
-                        return aPaid ? 1 : -1;
+                    // Ordena os meses (mais recente primeiro)
+                    const monthKeys = Object.keys(data.byMonth).sort((a, b) => b.localeCompare(a));
+                    
+                    let monthsHtml = '';
+                    monthKeys.forEach(monthKey => {
+                        const monthData = data.byMonth[monthKey];
+                        const [yy, mm] = monthKey.split('-');
+                        const monthLabel = `${mm}/${yy}`;
+                        
+                        // Ordena itens do mês (pendentes primeiro, depois por data decrescente)
+                        monthData.items.sort((a, b) => {
+                            const aPaid = a.friendHasPaid || false;
+                            const bPaid = b.friendHasPaid || false;
+                            if (aPaid === bPaid) {
+                                return new Date(b.date) - new Date(a.date);
+                            }
+                            return aPaid ? 1 : -1;
+                        });
+
+                        let itemsHtml = monthData.items.map(t => {
+                            const card = this.state.cards.find(c => c.id === t.cardId);
+                            let desc = t.description.replace(`(${name})`, '').trim();
+                            let instMatch = desc.match(/(\(\d+\/\d+\))/);
+                            let instBadge = '';
+                            if (instMatch) {
+                                instBadge = `<span class="text-indigo-600 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/50 px-1.5 py-0.5 rounded text-[10px] font-black ml-1 flex-shrink-0">${instMatch[1]}</span>`;
+                                desc = desc.replace(instMatch[1], '').trim();
+                            }
+                            
+                            const isFriendPaid = t.friendHasPaid === true;
+                            
+                            let actionBtn = '';
+                            if (isFriendPaid) {
+                                actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/40 transition-colors" title="Desfazer"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
+                            } else {
+                                actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 bg-slate-100 hover:text-emerald-500 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
+                            }
+                            
+                            return `<div class="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-700 py-2 ${isFriendPaid ? 'opacity-60' : ''}">
+                                <div class="flex flex-col min-w-0 pr-2">
+                                    <div class="flex items-center flex-wrap gap-1">
+                                        <span class="truncate text-slate-700 dark:text-slate-200 font-bold ${isFriendPaid ? 'line-through' : ''}">${this.escapeHTML(desc)}</span>
+                                        ${instBadge}
+                                    </div>
+                                    <span class="text-[10px] text-slate-400 font-bold mt-0.5">${card ? this.escapeHTML(card.name) : ''}</span>
+                                </div>
+                                <div class="text-right flex-shrink-0 flex items-center gap-2 sm:gap-3">
+                                    <div class="flex flex-col items-end">
+                                        ${isFriendPaid ? `<span class="text-[9px] font-black text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded mb-0.5">PAGO</span>` : `<span class="text-[9px] font-black text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded mb-0.5">PENDENTE</span>`}
+                                        <span class="font-black ${isFriendPaid ? 'text-slate-400 line-through' : 'text-rose-500'} block text-sm sm:text-base">${this.formatCurrency(t.amount)}</span>
+                                    </div>
+                                    ${actionBtn}
+                                </div>
+                            </div>`;
+                        }).join('');
+
+                        const monthPending = monthData.totalPending;
+                        monthsHtml += `
+                            <div class="border border-slate-100 dark:border-slate-700/60 rounded-xl overflow-hidden mb-2">
+                                <div onclick="document.getElementById('friend-month-${name.replace(/\s/g, '')}-${monthKey}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-900/40 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900/60 transition-colors">
+                                    <span class="font-black text-sm text-slate-700 dark:text-slate-200">${monthLabel}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-black text-sm ${monthPending > 0 ? 'text-rose-500' : 'text-emerald-500'}">${this.formatCurrency(monthPending)}</span>
+                                        <i class="ph ph-caret-down text-slate-400 transition-transform duration-300"></i>
+                                    </div>
+                                </div>
+                                <div id="friend-month-${name.replace(/\s/g, '')}-${monthKey}" class="hidden flex-col bg-white dark:bg-slate-800 px-3 py-1">
+                                    ${itemsHtml}
+                                </div>
+                            </div>
+                        `;
                     });
-
-                    let itemsHtml = data.items.map(t => {
-                        const card = this.state.cards.find(c => c.id === t.cardId);
-                        let monthLabel = '';
-                        if (t.invoiceMonth) {
-                            const [iy, im] = t.invoiceMonth.split('-');
-                            monthLabel = `Fat. ${im}/${iy}`;
-                        } else {
-                            const [y, m, d] = t.date.split('-');
-                            monthLabel = `${m}/${y}`;
-                        }
-
-                        let desc = t.description.replace(`(${name})`, '').trim();
-                        let instMatch = desc.match(/(\(\d+\/\d+\))/);
-                        let instBadge = '';
-                        if (instMatch) {
-                            instBadge = `<span class="text-indigo-600 bg-indigo-100 dark:text-indigo-300 dark:bg-indigo-900/50 px-1.5 py-0.5 rounded text-[10px] font-black ml-2 flex-shrink-0">${instMatch[1]}</span>`;
-                            desc = desc.replace(instMatch[1], '').trim();
-                        }
-                        
-                        const isFriendPaid = t.friendHasPaid === true;
-                        
-                        let actionBtn = '';
-                        if (isFriendPaid) {
-                            actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-emerald-500 bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center hover:bg-red-100 hover:text-red-500 dark:hover:bg-red-900/40 transition-colors" title="Desfazer"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
-                        } else {
-                            actionBtn = `<button onclick="app.toggleFriendPaid('${t.id}')" class="w-7 h-7 sm:w-8 sm:h-8 rounded-full text-slate-400 bg-slate-100 hover:text-emerald-500 hover:bg-emerald-50 dark:bg-slate-800 dark:hover:bg-slate-700 flex items-center justify-center transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-base sm:text-lg"></i></button>`;
-                        }
-                        
-                        return `<div class="flex justify-between items-center text-xs border-b border-slate-100 dark:border-slate-700 py-2.5 ${isFriendPaid ? 'opacity-60' : ''}">
-                            <div class="flex flex-col min-w-0 pr-2">
-                                <div class="flex items-center">
-                                    <span class="truncate text-slate-700 dark:text-slate-200 font-bold ${isFriendPaid ? 'line-through' : ''}">${this.escapeHTML(desc)}</span>
-                                    ${instBadge}
-                                </div>
-                                <span class="text-[10px] text-slate-400 font-bold mt-0.5">${card ? card.name + ' • ' : ''}${monthLabel}</span>
-                            </div>
-                            <div class="text-right flex-shrink-0 flex items-center gap-2 sm:gap-3">
-                                <div class="flex flex-col items-end">
-                                    ${isFriendPaid ? `<span class="text-[9px] font-black text-emerald-600 bg-emerald-100 dark:text-emerald-400 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded mb-0.5">PAGO</span>` : `<span class="text-[9px] font-black text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 px-1.5 py-0.5 rounded mb-0.5">PENDENTE</span>`}
-                                    <span class="font-black ${isFriendPaid ? 'text-slate-400 line-through' : 'text-rose-500'} block text-sm sm:text-base">${this.formatCurrency(t.amount)}</span>
-                                </div>
-                                ${actionBtn}
-                            </div>
-                        </div>`;
-                    }).join('');
 
                     container.innerHTML += `
                         <div class="card p-5 flex flex-col gap-2 relative overflow-hidden border border-slate-100 dark:border-slate-700/60 shadow-md">
@@ -1785,11 +1807,11 @@
                                 <h3 class="font-black text-xl text-slate-800 dark:text-white flex items-center gap-2 truncate pr-2"><i class="ph ph-user-circle text-indigo-500 text-2xl"></i> ${this.escapeHTML(name)}</h3>
                                 <div class="text-right flex flex-col">
                                     <span class="font-black ${data.totalPending > 0 ? 'text-rose-500' : 'text-emerald-500'} text-lg flex-shrink-0">${this.formatCurrency(data.totalPending)}</span>
-                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Pendente</span>
+                                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Total Pendente</span>
                                 </div>
                             </div>
-                            <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60 max-h-56 overflow-y-auto pr-1">
-                                ${itemsHtml}
+                            <div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                                ${monthsHtml}
                             </div>
                         </div>
                     `;
