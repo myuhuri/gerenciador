@@ -446,6 +446,22 @@
             { id: 'c5', name: 'Transporte', icon: '🚗', type: 'expense', budgetLimit: 0 }
         ];
 
+        // Quantidade de parcelas do formulário atual (1 = à vista).
+        // Funciona tanto na Nova Transação (checkbox "É parcelada?") quanto na edição (campo direto).
+        window.currentInstCount = function () {
+            const cb = document.getElementById('swal-tx-is-installment');
+            if (cb && cb.type === 'checkbox' && !cb.checked) return 1;
+            const count = Number(document.getElementById('swal-installments-count')?.value);
+            return count > 1 ? count : 1;
+        };
+
+        window.toggleMethodBoxes = function (m) {
+            const set = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? 'block' : 'none'; };
+            set('tx-cc-container', m === 'credit');
+            set('tx-boleto-container', m === 'boleto');
+            set('tx-paid-container', m !== 'credit');
+        };
+
         window.updateSwalCat = function() {
             const type = document.getElementById('swal-tx-type').value;
             const select = document.getElementById('swal-tx-cat');
@@ -474,13 +490,10 @@
         };
 
         window.addSplitFriend = function(existingName = '', existingVal = '', existingPaid = '0') {
-            const isInstEl = document.getElementById('swal-tx-is-installment');
-            const isInst = isInstEl ? isInstEl.checked : false;
-            const instCountEl = document.getElementById('swal-installments-count');
-            const instCount = instCountEl && isInst ? Number(instCountEl.value) : 1;
-            
+            const instCount = window.currentInstCount();
+
             let paidOpts = `<option value="0" ${existingPaid == '0' ? 'selected': ''}>Não pagou</option>`;
-            if (isInst && instCount > 1) {
+            if (instCount > 1) {
                 for(let i=1; i<=instCount; i++) {
                     paidOpts += `<option value="${i}" ${existingPaid == String(i) ? 'selected': ''}>Pagou ${i} parcela(s)</option>`;
                 }
@@ -533,15 +546,11 @@
         };
 
         window.updateSplitInst = function() {
-            const isInstEl = document.getElementById('swal-tx-is-installment');
-            const isInst = isInstEl ? isInstEl.checked : false;
-            const instCountEl = document.getElementById('swal-installments-count');
-            const instCount = instCountEl && isInst ? Number(instCountEl.value) : 1;
-            
+            const instCount = window.currentInstCount();
             document.querySelectorAll('.friend-paid').forEach(select => {
                 const currentVal = select.value;
                 let paidOpts = `<option value="0" ${currentVal == '0' ? 'selected': ''}>Não pagou</option>`;
-                if (isInst && instCount > 1) {
+                if (instCount > 1) {
                     for(let i=1; i<=instCount; i++) {
                         paidOpts += `<option value="${i}" ${currentVal == String(i) ? 'selected': ''}>Pagou ${i} parcela(s)</option>`;
                     }
@@ -620,6 +629,16 @@
                 return dt.toISOString().slice(0, 10);
             },
 
+            // Soma k meses a uma data YYYY-MM-DD, mantendo o dia (ou o último dia do mês, se não existir)
+            addMonthsClamped(dateStr, k) {
+                const [y, m, d] = dateStr.split('-').map(Number);
+                const total = y * 12 + (m - 1) + k;
+                const ny = Math.floor(total / 12);
+                const nm = (total % 12) + 1;
+                const last = new Date(ny, nm, 0).getDate();
+                return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+            },
+
             getInvoiceMonth(y, mNum, dNum, cDay, dueDay) {
                 let tm = mNum; let ty = y;
                 if (dueDay < cDay) {
@@ -638,6 +657,198 @@
                 if (!card) return null;
                 const [y, m, d] = dateStr.split('-').map(Number);
                 return this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
+            },
+
+            ensureCategory(name, icon, type) {
+                let c = this.state.categories.find(x => x.name === name);
+                if (!c) { c = { id: this.generateId(), name, icon, type, budgetLimit: 0 }; this.state.categories.push(c); }
+                return c;
+            },
+
+            isAdvance(t) {
+                return !!t.isAdvance || (t.description || '').startsWith('Adiantamento:');
+            },
+
+            // Descrição base da compra (sem parcela, sem "(Minha parte)" e sem o nome do amigo)
+            baseDescOf(t) {
+                if (t.purchaseDesc) return t.purchaseDesc;
+                let d = t.description.replace(/\s*\(\d+\/\d+\)$/, '');
+                d = d.replace(/\s*\(Minha parte\)$/, '');
+                if (t.splitName && d.endsWith(`(${t.splitName})`)) d = d.slice(0, -(`(${t.splitName})`).length);
+                return d.trim();
+            },
+
+            parsedN(t) {
+                const m = (t.description || '').match(/\((\d+)\/(\d+)\)$/);
+                return m ? Number(m[2]) : 1;
+            },
+
+            // Reúne todos os lançamentos que pertencem à mesma compra
+            collectPurchase(tx) {
+                const all = this.state.transactions;
+                let txs;
+                if (tx.purchaseId) {
+                    txs = all.filter(t => t.purchaseId === tx.purchaseId);
+                } else if (tx.installmentGroupId) {
+                    txs = all.filter(t => t.installmentGroupId === tx.installmentGroupId);
+                } else if (tx.splitName || tx.description.includes('(Minha parte)')) {
+                    const base = this.baseDescOf(tx);
+                    txs = all.filter(t => t.date === tx.date && (t.splitName || t.description.includes('(Minha parte)')) && this.baseDescOf(t) === base);
+                } else {
+                    txs = [tx];
+                }
+                // Inclui pagamentos e adiantamentos ligados às dívidas dos amigos desta compra
+                if (txs.some(t => t.splitName)) {
+                    const debtIds = new Set(txs.map(t => t.debtId).filter(Boolean));
+                    txs = all.filter(t => txs.includes(t) || (t.debtId && debtIds.has(t.debtId)));
+                }
+                return txs;
+            },
+
+            // Lê o formulário de compra (usado por Nova Transação e Editar)
+            readPurchaseForm() {
+                const g = id => document.getElementById(id);
+                const type = g('swal-tx-type').value;
+                const isExp = type === 'expense';
+                const method = isExp ? (g('swal-tx-method')?.value || 'pix') : 'pix';
+                const n = isExp ? window.currentInstCount() : 1;
+                const isSplit = isExp && !!g('swal-tx-split')?.checked;
+                const friends = [];
+                if (isSplit) {
+                    document.querySelectorAll('.split-friend-item').forEach(div => {
+                        friends.push({
+                            name: div.querySelector('.friend-name').value.trim(),
+                            val: Number(div.querySelector('.friend-val').value) || 0,
+                            paidCount: Number(div.querySelector('.friend-paid').value) || 0
+                        });
+                    });
+                }
+                const v = {
+                    desc: g('swal-tx-desc').value.trim(),
+                    val: Number(g('swal-tx-val').value) || 0,
+                    date: g('swal-tx-date').value,
+                    type,
+                    cat: g('swal-tx-cat').value,
+                    paymentMethod: method,
+                    cardId: method === 'credit' ? (g('swal-tx-card-id')?.value || null) : null,
+                    boletoDue: method === 'boleto' ? (g('swal-tx-boleto-due')?.value || '') : '',
+                    boletoInterval: Number(g('swal-tx-boleto-interval')?.value) || 30,
+                    instCount: n,
+                    instMode: g('swal-installment-mode')?.value || 'total',
+                    isPaid: g('swal-tx-ispaid') ? g('swal-tx-ispaid').checked : true,
+                    isSplit,
+                    friends
+                };
+                const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
+                const total = v.val * mult;
+                const friendsTotal = friends.reduce((s, f) => s + f.val * mult, 0);
+
+                if (!v.desc || !v.val || !v.date || !v.cat) v.error = 'Preencha os campos obrigatórios!';
+                else if (method === 'boleto' && !v.boletoDue) v.error = 'Boleto: preencha a data de vencimento!';
+                else if (isSplit && friends.length === 0) v.error = 'Adicione pelo menos uma pessoa na divisão!';
+                else if (isSplit && friends.some(f => !f.name || f.val <= 0)) v.error = 'Preencha o nome e um valor válido para todas as pessoas!';
+                else if (isSplit && friendsTotal > total + 0.01) v.error = 'A soma das partes dos amigos excede o valor total da compra!';
+                return v;
+            },
+
+            // Cria todos os lançamentos de uma compra (à vista, parcelada, dividida ou não).
+            // Cada parcela recebe sua própria data e fatura, calculadas a partir da data da compra.
+            savePurchase(v, purchaseId = this.generateId()) {
+                const n = Math.max(1, Number(v.instCount) || 1);
+                const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
+                const total = Number(v.val) * mult;
+                const card = v.paymentMethod === 'credit' && v.cardId ? this.state.cards.find(c => c.id === v.cardId) : null;
+
+                const friends = v.isSplit ? v.friends.map(f => ({
+                    name: f.name,
+                    total: Number(f.val) * mult,
+                    paid: Number(f.paidCount) || 0,
+                    debtId: f.debtId || this.generateId()
+                })) : [];
+
+                const myTotal = total - friends.reduce((s, f) => s + f.total, 0);
+                const thirdCat = friends.length ? this.ensureCategory('Compra de Terceiros', '🤝', 'expense') : null;
+                const recCat = friends.some(f => f.paid > 0) ? this.ensureCategory('Recebimento de Dívida', '🤑', 'income') : null;
+                const group = n > 1 ? purchaseId : undefined;
+                const base = {
+                    purchaseId,
+                    purchaseDesc: v.desc,
+                    purchaseN: n,
+                    installmentGroupId: group,
+                    type: v.type,
+                    paymentMethod: card ? 'credit' : v.paymentMethod,
+                    cardId: card ? card.id : null
+                };
+
+                friends.forEach(f => {
+                    const paidAmt = Math.min(f.paid, n) * (f.total / n);
+                    this.state.debts.push({
+                        id: f.debtId, type: 'owes_me', title: `Divisão: ${v.desc} (${f.name})`,
+                        totalAmount: f.total, paidAmount: paidAmt
+                    });
+                    if (f.paid > 0) {
+                        this.state.transactions.push({
+                            id: this.generateId(), purchaseId, isAdvance: true, debtId: f.debtId,
+                            description: `Adiantamento: ${v.desc} (${f.name})${n > 1 ? ` - ${Math.min(f.paid, n)} parc.` : ''}`,
+                            amount: paidAmt, date: v.date, type: 'income', categoryId: recCat.id, isPaid: true
+                        });
+                    }
+                });
+
+                for (let k = 0; k < n; k++) {
+                    const date = this.addMonthsClamped(v.date, k);
+                    const inv = card ? this.invoiceFor(card.id, date) : null;
+                    const due = v.paymentMethod === 'boleto' && v.boletoDue
+                        ? this.addDaysStr(v.boletoDue, k * (Number(v.boletoInterval) || 30))
+                        : null;
+                    const suffix = n > 1 ? ` (${k + 1}/${n})` : '';
+                    const common = { ...base, date, invoiceMonth: inv, dueDate: due };
+
+                    const myAmt = myTotal / n;
+                    if (!v.isSplit || myAmt > 0.001) {
+                        this.state.transactions.push({
+                            ...common, id: this.generateId(),
+                            description: `${v.desc}${v.isSplit ? ' (Minha parte)' : ''}${suffix}`,
+                            amount: myAmt, categoryId: v.cat,
+                            isPaid: card ? false : (k === 0 ? !!v.isPaid : false)
+                        });
+                    }
+
+                    friends.forEach(f => {
+                        const fPaid = k < f.paid;
+                        this.state.transactions.push({
+                            ...common, id: this.generateId(),
+                            description: `${v.desc} (${f.name})${suffix}`,
+                            amount: f.total / n, categoryId: thirdCat.id,
+                            isPaid: card ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: f.debtId
+                        });
+                    });
+                }
+                return purchaseId;
+            },
+
+            getCashBalance(monthKey) {
+                const validTx = this.state.transactions.filter(t => t.date.startsWith(monthKey));
+                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                const cashIncome = validTx
+                    .filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null))
+                    .reduce((a, b) => a + Number(b.amount), 0);
+                const cashExpense = validTx
+                    .filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment')
+                    .reduce((a, b) => a + Number(b.amount), 0);
+                return cashIncome - cashExpense;
+            },
+
+            updateStatusIcon() {
+                const filterEl = document.getElementById('dash-month-filter');
+                const monthKey = filterEl ? filterEl.value : '';
+                const balance = this.getCashBalance(monthKey);
+                const iconUrl = balance >= 0 ? '1.png' : '2.png';
+
+                const sidebarLogo = document.getElementById('sidebar-logo');
+                if (sidebarLogo) sidebarLogo.src = iconUrl;
+                const mobileLogo = document.getElementById('mobile-logo');
+                if (mobileLogo) mobileLogo.src = iconUrl;
             },
 
             getKnownFriends() {
@@ -786,30 +997,6 @@
                         Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Conta excluída!', showConfirmButton: false, timer: 2000 });
                     }
                 });
-            },
-
-            getCashBalance(monthKey) {
-                const validTx = this.state.transactions.filter(t => t.date.startsWith(monthKey));
-                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                const cashIncome = validTx
-                    .filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null))
-                    .reduce((a, b) => a + Number(b.amount), 0);
-                const cashExpense = validTx
-                    .filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment')
-                    .reduce((a, b) => a + Number(b.amount), 0);
-                return cashIncome - cashExpense;
-            },
-
-            updateStatusIcon() {
-                const filterEl = document.getElementById('dash-month-filter');
-                const monthKey = filterEl ? filterEl.value : '';
-                const balance = this.getCashBalance(monthKey);
-                const iconUrl = balance >= 0 ? '1.png' : '2.png';
-
-                const sidebarLogo = document.getElementById('sidebar-logo');
-                if (sidebarLogo) sidebarLogo.src = iconUrl;
-                const mobileLogo = document.getElementById('mobile-logo');
-                if (mobileLogo) mobileLogo.src = iconUrl;
             },
 
             toggleTheme() { 
@@ -1702,234 +1889,14 @@
                     `,
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
                     preConfirm: () => {
-                        const desc = document.getElementById('swal-tx-desc').value; 
-                        const val = document.getElementById('swal-tx-val').value;
-                        const date = document.getElementById('swal-tx-date').value; 
-                        const type = document.getElementById('swal-tx-type').value; 
-                        const cat = document.getElementById('swal-tx-cat').value;
-                        
-                        const isPaidEl = document.getElementById('swal-tx-ispaid');
-                        const isPaid = isPaidEl ? isPaidEl.checked : true;
-
-                        let isInstallment = false; let instMode = null; let instCount = null;
-                        let paymentMethod = 'pix'; let cardId = null; let boletoDue = null; let boletoInterval = 30;
-                        
-                        let isSplit = false;
-                        let friends = [];
-                        let myVal = 0;
-
-                        if (type === 'expense') {
-                            isInstallment = document.getElementById('swal-tx-is-installment').checked;
-                            instMode = document.getElementById('swal-installment-mode').value;
-                            instCount = document.getElementById('swal-installments-count').value;
-                            paymentMethod = document.getElementById('swal-tx-method') ? document.getElementById('swal-tx-method').value : 'pix';
-                            
-                            if (paymentMethod === 'credit') {
-                                cardId = document.getElementById('swal-tx-card-id').value;
-                            } else if (paymentMethod === 'boleto') {
-                                boletoDue = document.getElementById('swal-tx-boleto-due').value;
-                                boletoInterval = Number(document.getElementById('swal-tx-boleto-interval').value) || 30;
-                            }
-                            
-                            isSplit = document.getElementById('swal-tx-split').checked;
-                            if (isSplit) {
-                                document.querySelectorAll('.split-friend-item').forEach(div => {
-                                    let fName = div.querySelector('.friend-name').value.trim();
-                                    friends.push({
-                                        name: fName,
-                                        val: Number(div.querySelector('.friend-val').value),
-                                        paidCount: Number(div.querySelector('.friend-paid').value)
-                                    });
-                                    if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
-                                });
-                                let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
-                                myVal = Number(val) - friendsTotal;
-                            }
-                        }
-
-                        if (!desc || !val || !date || !cat) { Swal.showValidationMessage('Preencha os campos obrigatórios!'); return false; }
-                        if (isInstallment && (!instCount || instCount < 2)) { Swal.showValidationMessage('Insira um número válido de parcelas (mínimo 2)!'); return false; }
-                        if (paymentMethod === 'boleto' && !boletoDue) { Swal.showValidationMessage('Boleto: Preencha a data de vencimento!'); return false; }
-                        
-                        if (isSplit) {
-                            if (friends.length === 0) { Swal.showValidationMessage('Adicione pelo menos um amigo na divisão!'); return false; }
-                            if (friends.some(f => !f.name || f.val <= 0)) { Swal.showValidationMessage('Preencha o nome e um valor válido para todos os amigos!'); return false; }
-                            if (myVal < -0.01) { Swal.showValidationMessage('A soma das partes dos amigos excede o valor total da compra!'); return false; }
-                        }
-                        
-                        return { desc, val: Number(val), date, type, cat, isInstallment, instMode, instCount: Number(instCount), paymentMethod, cardId, boletoDue, boletoInterval, isPaid, isSplit, friends, myVal };
+                        const v = this.readPurchaseForm();
+                        if (v.error) { Swal.showValidationMessage(v.error); return false; }
+                        return v;
                     }
                 });
 
-                if (formValues) { 
-                    const getInvoiceMonth = (y, mNum, dNum, cDay, dueDay) => this.getInvoiceMonth(y, mNum, dNum, cDay, dueDay);
-
-                    const isCC = formValues.paymentMethod === 'credit';
-                    const card = (isCC && formValues.cardId) ? this.state.cards.find(c => c.id === formValues.cardId) : null;
-                    
-                    let thirdCatId = null;
-                    let rCat = null;
-
-                    if (formValues.isSplit && formValues.friends.some(f => f.paidCount > 0)) {
-                        let rCatName = 'Recebimento de Dívida';
-                        rCat = this.state.categories.find(c => c.name === rCatName);
-                        if(!rCat) {
-                            rCat = { id: this.generateId(), name: rCatName, icon: '🤑', type: 'income', budgetLimit: 0 };
-                            this.state.categories.push(rCat);
-                        }
-                    }
-
-                    if (formValues.isInstallment) {
-                        let amountPerInst = Number(formValues.val) / formValues.instCount;
-                        if (formValues.instMode === 'parcela') {
-                            amountPerInst = Number(formValues.val);
-                        }
-                        let myAmtInst = formValues.myVal / (formValues.instMode === 'total' ? formValues.instCount : 1);
-
-                        let debtIds = {};
-                        if (formValues.isSplit) {
-                            let thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
-                            if (!thirdCat) {
-                                thirdCat = { id: this.generateId(), name: 'Compra de Terceiros', icon: '🤝', type: 'expense', budgetLimit: 0 };
-                                this.state.categories.push(thirdCat);
-                            }
-                            thirdCatId = thirdCat.id;
-                            
-                            formValues.friends.forEach(f => {
-                                let debtTotal = formValues.instMode === 'parcela' ? f.val * formValues.instCount : f.val;
-                                let friendAmtInst = f.val / (formValues.instMode === 'total' ? formValues.instCount : 1);
-                                let paidAmountForDebt = f.paidCount * friendAmtInst;
-                                
-                                let did = this.generateId();
-                                debtIds[f.name] = did;
-                                this.state.debts.push({
-                                    id: did, type: 'owes_me', title: `Divisão: ${formValues.desc} (${f.name})`,
-                                    totalAmount: debtTotal, paidAmount: paidAmountForDebt
-                                });
-
-                                if (paidAmountForDebt > 0) {
-                                    this.state.transactions.push({
-                                        id: this.generateId(),
-                                        debtId: did,
-                                        description: `Adiantamento: Divisão ${formValues.desc} (${f.name}) - ${f.paidCount} parc.`,
-                                        amount: paidAmountForDebt,
-                                        date: formValues.date,
-                                        type: 'income',
-                                        categoryId: rCat.id,
-                                        isPaid: true
-                                    });
-                                }
-                            });
-                        }
-                        
-                        const [y, m, d] = formValues.date.split('-');
-                        let currYear = parseInt(y); let currMonth = parseInt(m); const currDay = parseInt(d);
-
-                        const groupId = this.generateId();
-
-                        for (let i = 1; i <= formValues.instCount; i++) {
-                            const lastDayOfMonth = new Date(currYear, currMonth, 0).getDate();
-                            const targetDay = Math.min(currDay, lastDayOfMonth);
-                            const dateStr = `${currYear}-${String(currMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-                            
-                            let invMonth = null;
-                            if (card) invMonth = getInvoiceMonth(currYear, currMonth, targetDay, card.closingDay, card.dueDay);
-
-                            let currentBoletoDue = null;
-                            if (formValues.paymentMethod === 'boleto') {
-                                currentBoletoDue = this.addDaysStr(formValues.boletoDue, (i - 1) * formValues.boletoInterval);
-                            }
-
-                            const txBaseInfo = {
-                                installmentGroupId: groupId, date: dateStr, type: formValues.type,
-                                paymentMethod: formValues.paymentMethod, cardId: card ? card.id : null, invoiceMonth: invMonth, dueDate: currentBoletoDue
-                            };
-
-                            if (formValues.isSplit) {
-                                if (myAmtInst > 0) {
-                                    this.state.transactions.push({
-                                        id: this.generateId(), description: `${formValues.desc} (Minha parte) (${i}/${formValues.instCount})`,
-                                        amount: myAmtInst, categoryId: formValues.cat,
-                                        isPaid: card ? false : (i === 1 ? formValues.isPaid : false), ...txBaseInfo
-                                    });
-                                }
-                                formValues.friends.forEach(f => {
-                                    let friendAmtInst = f.val / (formValues.instMode === 'total' ? formValues.instCount : 1);
-                                    let fPaid = (i <= f.paidCount);
-                                    this.state.transactions.push({
-                                        id: this.generateId(), description: `${formValues.desc} (${f.name}) (${i}/${formValues.instCount})`,
-                                        amount: friendAmtInst, categoryId: thirdCatId,
-                                        isPaid: card ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: debtIds[f.name], ...txBaseInfo
-                                    });
-                                });
-                            } else {
-                                this.state.transactions.push({
-                                    id: this.generateId(), description: `${formValues.desc} (${i}/${formValues.instCount})`,
-                                    amount: amountPerInst, categoryId: formValues.cat,
-                                    isPaid: card ? false : (i === 1 ? formValues.isPaid : false), ...txBaseInfo
-                                });
-                            }
-                            currMonth++; if(currMonth > 12) { currMonth = 1; currYear++; }
-                        }
-                    } else {
-                        let invMonth = null;
-                        const [y, m, d] = formValues.date.split('-');
-                        if (card) invMonth = getInvoiceMonth(parseInt(y), parseInt(m), parseInt(d), card.closingDay, card.dueDay);
-
-                        const txBaseInfo = {
-                            date: formValues.date, type: formValues.type, paymentMethod: formValues.paymentMethod,
-                            cardId: card ? card.id : null, invoiceMonth: invMonth, dueDate: formValues.boletoDue
-                        };
-
-                        if (formValues.isSplit) {
-                            let thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
-                            if (!thirdCat) {
-                                thirdCat = { id: this.generateId(), name: 'Compra de Terceiros', icon: '🤝', type: 'expense', budgetLimit: 0 };
-                                this.state.categories.push(thirdCat);
-                            }
-                            thirdCatId = thirdCat.id;
-
-                            formValues.friends.forEach(f => {
-                                let fPaid = f.paidCount >= 1;
-                                let did = this.generateId();
-                                this.state.debts.push({
-                                    id: did, type: 'owes_me', title: `Divisão: ${formValues.desc} (${f.name})`,
-                                    totalAmount: f.val, paidAmount: fPaid ? f.val : 0
-                                });
-
-                                if (fPaid) {
-                                    this.state.transactions.push({
-                                        id: this.generateId(),
-                                        debtId: did,
-                                        description: `Adiantamento: Divisão ${formValues.desc} (${f.name})`,
-                                        amount: f.val,
-                                        date: formValues.date,
-                                        type: 'income',
-                                        categoryId: rCat.id,
-                                        isPaid: true
-                                    });
-                                }
-
-                                this.state.transactions.push({ 
-                                    id: this.generateId(), description: formValues.desc + ` (${f.name})`, amount: f.val, 
-                                    categoryId: thirdCatId, isPaid: card ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: did, ...txBaseInfo
-                                }); 
-                            });
-
-                            if(formValues.myVal > 0) {
-                                this.state.transactions.push({ 
-                                    id: this.generateId(), description: formValues.desc + " (Minha parte)", amount: formValues.myVal, 
-                                    categoryId: formValues.cat, isPaid: card ? false : formValues.isPaid, ...txBaseInfo 
-                                }); 
-                            }
-                        } else {
-                            this.state.transactions.push({ 
-                                id: this.generateId(), description: formValues.desc, amount: formValues.val, 
-                                categoryId: formValues.cat, isPaid: card ? false : formValues.isPaid, ...txBaseInfo 
-                            }); 
-                        }
-                    }
-
+                if (formValues) {
+                    this.savePurchase(formValues);
                     this.saveData(); 
                     this.renderTransactions(); 
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
@@ -1954,293 +1921,127 @@
                     return;
                 }
 
-                const thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
-                let isSplit = false;
-                let isInst = !!tx.installmentGroupId;
-                let baseDesc = tx.description;
+                const txs = this.collectPurchase(tx);
+                const oldIds = txs.map(t => t.id);
+                const oldDebtIds = txs.map(t => t.debtId).filter(Boolean);
+                const ownTxs = txs.filter(t => !t.splitName && !this.isAdvance(t));
+                const friendTxs = txs.filter(t => t.splitName);
+                const isSplit = friendTxs.length > 0;
 
-                if (tx.description.includes('(Minha parte)') || (thirdCat && tx.categoryId === thirdCat.id && tx.description.includes('('))) {
-                    isSplit = true;
-                    const matchDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '');
-                    if (tx.description.includes('(Minha parte)')) {
-                        baseDesc = matchDesc.replace(' (Minha parte)', '').trim();
-                    } else {
-                        const m = matchDesc.match(/(.+) \(([^)]+)\)$/);
-                        if(m) { baseDesc = m[1].trim(); }
-                    }
-                } else if (isInst) {
-                    baseDesc = tx.description.replace(/\s*\(\d+\/\d+\)$/, '').trim();
-                }
+                const friendMap = {};
+                friendTxs.forEach(t => {
+                    if (!friendMap[t.splitName]) friendMap[t.splitName] = { name: t.splitName, val: 0, paid: 0, debtId: t.debtId };
+                    friendMap[t.splitName].val += Number(t.amount);
+                    if (t.friendHasPaid) friendMap[t.splitName].paid++;
+                });
+                const friends = Object.values(friendMap);
+                const friendsTotal = friends.reduce((s, f) => s + f.val, 0);
 
-                let myTotal = 0;
-                let friendsInEdit = {};
-                let numInst = 1;
-                let myTxs = [];
-                let theirTxs = [];
+                const n = Math.max(1, ...[...ownTxs, ...friendTxs].map(t => t.purchaseN || this.parsedN(t)));
+                const ref = ownTxs[0] || friendTxs[0] || tx;
+                const method = ref.cardId ? 'credit' : (ref.paymentMethod === 'boleto' ? 'boleto' : 'pix');
+                const firstDate = txs.filter(t => !this.isAdvance(t)).map(t => t.date).sort()[0] || tx.date;
+                const firstDue = txs.map(t => t.dueDate).filter(Boolean).sort()[0] || '';
+                const total = [...ownTxs, ...friendTxs].reduce((s, t) => s + Number(t.amount), 0);
+                const desc = this.baseDescOf(tx);
+                const isPaidInit = ownTxs[0] ? !!ownTxs[0].isPaid : true;
 
-                if (isInst) {
-                    let groupTxs = this.state.transactions.filter(t => t.installmentGroupId === tx.installmentGroupId);
-                    if (isSplit) {
-                        myTxs = groupTxs.filter(t => t.description.includes('(Minha parte)'));
-                        theirTxs = groupTxs.filter(t => t.categoryId === thirdCat?.id);
-                        myTotal = myTxs.reduce((sum, t) => sum + t.amount, 0);
-                        numInst = Math.max(myTxs.length, 1);
-                        
-                        theirTxs.forEach(t => {
-                            if(!friendsInEdit[t.splitName]) friendsInEdit[t.splitName] = {val: 0, paidCount: 0};
-                            friendsInEdit[t.splitName].val += t.amount;
-                            if(t.friendHasPaid) friendsInEdit[t.splitName].paidCount++;
-                            numInst = Math.max(numInst, t.description.match(/\/\d+\)$/) ? Number(t.description.match(/\/(\d+)\)$/)[1]) : 1);
-                        });
-                    } else {
-                        myTxs = groupTxs;
-                        myTotal = groupTxs.reduce((sum, t) => sum + t.amount, 0);
-                        numInst = groupTxs.length;
-                    }
-                } else {
-                    if (isSplit) {
-                        myTxs = [tx.description.includes('(Minha parte)') ? tx : this.state.transactions.find(t => t.date === tx.date && t.description.startsWith(baseDesc + ' (Minha parte)'))].filter(Boolean);
-                        theirTxs = this.state.transactions.filter(t => t.date === tx.date && t.categoryId === thirdCat?.id && t.description.startsWith(baseDesc));
-                        myTotal = myTxs.reduce((sum, t) => sum + t.amount, 0);
-                        
-                        theirTxs.forEach(t => {
-                            if(!friendsInEdit[t.splitName]) friendsInEdit[t.splitName] = {val: 0, paidCount: 0};
-                            friendsInEdit[t.splitName].val += t.amount;
-                            if(t.friendHasPaid) friendsInEdit[t.splitName].paidCount++;
-                        });
-                    } else {
-                        myTxs = [tx];
-                        myTotal = tx.amount;
-                    }
-                }
-
-                let theirTotalCombined = 0;
-                Object.values(friendsInEdit).forEach(f => theirTotalCombined += f.val);
-                const totalIntegral = myTotal + theirTotalCombined;
-                
-                const isCCExpense = tx.cardId && tx.type !== 'cc_payment';
-                const isPaidHtml = !isCCExpense ? `
-                    <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
-                        <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
-                            <input type="checkbox" id="swal-tx-ispaid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" ${tx.isPaid ? 'checked' : ''}>
-                            Marcar como Paga
-                        </label>
-                    </div>
-                ` : `<div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4"><p class="text-[10px] font-bold text-slate-500"><i class="ph ph-lock mr-1"></i> O status de pagamento está vinculado à fatura.</p></div>`;
-
-                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === tx.categoryId ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
-
-                let htmlContent = '';
-                if (isSplit) {
-                    htmlContent = `
-                        <div class="text-left px-1 w-full">
-                            <label class="block text-xs font-bold text-slate-500 mb-1">Descrição</label>
-                            <input id="swal-split-desc" type="text" class="swal2-input !mt-0 !mb-3 w-full" value="${this.escapeHTML(baseDesc)}">
-
-                            <label class="block text-xs font-bold text-slate-500 mb-1">Valor Integral (Total) da Compra (R$)</label>
-                            <input id="swal-split-total" type="number" step="0.01" class="swal2-input !mt-0 !mb-3 w-full" value="${totalIntegral.toFixed(2)}" oninput="window.calcSplit()">
-                            
-                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-2">Data ${isInst ? 'da Primeira Parcela' : ''}</label>
-                            <input id="swal-tx-date" type="date" class="swal2-input !mt-0 w-full" value="${isInst ? (myTxs[0] || theirTxs[0]).date : tx.date}">
-                            
-                            <div id="tx-split-container" class="bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-4 space-y-2 w-full">
-                                <p class="text-[10px] text-slate-500 font-bold mb-2">Pessoas dividindo com você:</p>
-                                
-                                <div id="split-friends-list" class="flex flex-col gap-2"></div>
-                                
-                                <button type="button" onclick="window.addSplitFriend()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-3 py-2.5 rounded-lg w-full mt-2 hover:bg-indigo-200 transition-colors">+ Adicionar Pessoa</button>
-                                
-                                <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 w-full flex items-center justify-between">
-                                    <label class="block text-[11px] sm:text-xs font-bold text-slate-500 ml-1">O que sobra p/ VOCÊ (R$)</label>
-                                    <input id="swal-split-my" type="number" class="swal2-input !mt-0 !text-sm w-24 sm:w-32 bg-transparent border-none shadow-none text-right font-black !p-0" readonly value="${myTotal.toFixed(2)}">
-                                </div>
-                            </div>
-                            
-                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Categoria da Sua Parte</label>
-                            <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
-
-                            <input type="hidden" id="swal-tx-type" value="${tx.type}">
-                            <input type="hidden" id="swal-tx-is-installment" value="${isInst ? 'on' : ''}">
-                            <input type="hidden" id="swal-installments-count" value="${numInst}">
-                            ${!isInst ? isPaidHtml : ''}
-                        </div>
-                    `;
-
-                    setTimeout(() => {
-                        Object.keys(friendsInEdit).forEach(name => {
-                            let fData = friendsInEdit[name];
-                            window.addSplitFriend(name, fData.val.toFixed(2), String(fData.paidCount));
-                        });
-                    }, 100);
-
-                } else {
-                    htmlContent = `
-                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-2 text-left px-2">Descrição</label>
-                        <input id="swal-tx-desc" class="swal2-input !mt-0" placeholder="Descrição" value="${this.escapeHTML(baseDesc)}">
-                        
-                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Valor Integral (Total) (R$)</label>
-                        <input id="swal-tx-val" type="number" step="0.01" class="swal2-input !mt-0" placeholder="Valor" value="${myTotal.toFixed(2)}">
-                        
-                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Data ${isInst ? 'da Primeira Parcela' : ''}</label>
-                        <input id="swal-tx-date" type="date" class="swal2-input !mt-0" value="${isInst ? myTxs[0].date : tx.date}">
-                        
-                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Tipo de Transação</label>
-                        <select id="swal-tx-type" class="swal2-select !mt-0 font-bold" onchange="window.updateEditSwalCat()">
-                            <option value="expense" ${tx.type === 'expense' ? 'selected' : ''}>Despesa (Saída)</option>
-                            <option value="income" ${tx.type === 'income' ? 'selected' : ''}>Receita (Entrada)</option>
-                        </select>
-                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Categoria</label>
-                        <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
-                        ${!isInst ? isPaidHtml : ''}
-                    `;
-                }
+                const cardOpts = this.state.cards.map(c => `<option value="${c.id}" ${c.id === ref.cardId ? 'selected' : ''}>${this.escapeHTML(c.name)}</option>`).join('');
+                const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === (ownTxs[0]?.categoryId || tx.categoryId) ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
 
                 const { value: formValues } = await Swal.fire({
-                    title: `Editar Compra ${isInst ? 'Parcelada' : ''}`,
-                    html: htmlContent,
+                    title: `Editar Compra`,
+                    html: `
+                        <div class="text-left px-1 w-full">
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-2">Descrição</label>
+                            <input id="swal-tx-desc" class="swal2-input !mt-0" value="${this.escapeHTML(desc)}">
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Valor Total da Compra (R$)</label>
+                            <input id="swal-tx-val" type="number" step="0.01" class="swal2-input !mt-0" value="${total.toFixed(2)}" oninput="window.calcSplit()">
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Data da Compra (ou da 1ª parcela)</label>
+                            <input id="swal-tx-date" type="date" class="swal2-input !mt-0" value="${firstDate}">
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Tipo</label>
+                            <select id="swal-tx-type" class="swal2-select !mt-0 font-bold" onchange="window.updateEditSwalCat()">
+                                <option value="expense" ${tx.type === 'expense' ? 'selected' : ''}>Despesa (Saída)</option>
+                                <option value="income" ${tx.type === 'income' ? 'selected' : ''}>Receita (Entrada)</option>
+                            </select>
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Categoria</label>
+                            <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Método de Pagamento</label>
+                            <select id="swal-tx-method" class="swal2-select !mt-0 font-bold" onchange="window.toggleMethodBoxes(this.value)">
+                                <option value="pix" ${method === 'pix' ? 'selected' : ''}>Dinheiro / Pix</option>
+                                <option value="boleto" ${method === 'boleto' ? 'selected' : ''}>Boleto</option>
+                                ${this.state.cards.length > 0 ? `<option value="credit" ${method === 'credit' ? 'selected' : ''}>Cartão de Crédito</option>` : ''}
+                            </select>
+
+                            <div id="tx-cc-container" class="mt-2" style="display:${method === 'credit' ? 'block' : 'none'}">
+                                <select id="swal-tx-card-id" class="swal2-select !mt-0">${cardOpts}</select>
+                            </div>
+
+                            <div id="tx-boleto-container" class="mt-2" style="display:${method === 'boleto' ? 'block' : 'none'}">
+                                <label class="block text-[11px] font-bold text-slate-500 mb-1">Vencimento do 1º boleto</label>
+                                <input id="swal-tx-boleto-due" type="date" class="swal2-input !mt-0" value="${firstDue}">
+                                <label class="block text-[11px] font-bold text-slate-500 mb-1 mt-2">Dias entre cada boleto</label>
+                                <input id="swal-tx-boleto-interval" type="number" min="1" value="30" class="swal2-input !mt-0">
+                            </div>
+
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Nº de parcelas (1 = à vista)</label>
+                            <input id="swal-installments-count" type="number" min="1" max="72" value="${n}" class="swal2-input !mt-0" oninput="window.updateSplitInst()">
+                            <input type="hidden" id="swal-installment-mode" value="total">
+
+                            <div id="tx-paid-container" class="mt-4" style="display:${method === 'credit' ? 'none' : 'block'}">
+                                <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer">
+                                    <input type="checkbox" id="swal-tx-ispaid" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" ${isPaidInit ? 'checked' : ''}>
+                                    Já foi pago / recebido?
+                                </label>
+                            </div>
+
+                            <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                                <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-2">
+                                    <input type="checkbox" id="swal-tx-split" class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-800" ${isSplit ? 'checked' : ''} onchange="document.getElementById('tx-split-container').classList.toggle('hidden')">
+                                    Dividir compra com amigos?
+                                </label>
+                                <div id="tx-split-container" class="${isSplit ? '' : 'hidden'} bg-slate-50 dark:bg-slate-900/40 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 mt-2 space-y-2">
+                                    <p class="text-[10px] text-slate-500 font-bold mb-2">Pessoas dividindo com você (valores do total da compra):</p>
+                                    <div id="split-friends-list" class="flex flex-col gap-2"></div>
+                                    <button type="button" onclick="window.addSplitFriend()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-3 py-2.5 rounded-lg w-full mt-2 hover:bg-indigo-200 transition-colors">+ Adicionar Pessoa</button>
+                                    <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 w-full flex items-center justify-between">
+                                        <label class="block text-[11px] sm:text-xs font-bold text-slate-500 ml-1">O que sobra p/ VOCÊ (R$)</label>
+                                        <input id="swal-split-my" type="number" class="swal2-input !mt-0 !text-sm w-24 sm:w-32 bg-transparent border-none shadow-none text-right font-black !p-0" readonly value="${(total - friendsTotal).toFixed(2)}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `,
+                    didOpen: () => {
+                        friends.forEach(f => window.addSplitFriend(f.name, f.val.toFixed(2), String(f.paid)));
+                        window.calcSplit();
+                    },
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Salvar', cancelButtonText: 'Cancelar',
                     preConfirm: () => {
-                        let res = {
-                            date: document.getElementById('swal-tx-date').value,
-                            type: document.getElementById('swal-tx-type').value,
-                            cat: document.getElementById('swal-tx-cat').value,
-                            isPaid: document.getElementById('swal-tx-ispaid') ? document.getElementById('swal-tx-ispaid').checked : tx.isPaid
-                        };
-
-                        if (isSplit) {
-                            res.desc = document.getElementById('swal-split-desc').value;
-                            res.myTotalVal = Number(document.getElementById('swal-split-my').value);
-                            const total = Number(document.getElementById('swal-split-total').value);
-                            
-                            res.friends = [];
-                            document.querySelectorAll('.split-friend-item').forEach(div => {
-                                let fName = div.querySelector('.friend-name').value.trim();
-                                res.friends.push({
-                                    name: fName,
-                                    val: Number(div.querySelector('.friend-val').value),
-                                    paidCount: Number(div.querySelector('.friend-paid').value)
-                                });
-                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
-                            });
-                            
-                            let friendsTotal = res.friends.reduce((sum, f) => sum + f.val, 0);
-                            if (Math.abs(total - (res.myTotalVal + friendsTotal)) > 0.01) { Swal.showValidationMessage('A soma não bate com o total!'); return false; }
-                        } else {
-                            res.desc = document.getElementById('swal-tx-desc').value;
-                            res.myTotalVal = Number(document.getElementById('swal-tx-val').value);
-                        }
-                        return res;
+                        const v = this.readPurchaseForm();
+                        if (v.error) { Swal.showValidationMessage(v.error); return false; }
+                        return v;
                     }
                 });
 
-                if (formValues && formValues.desc) {
-                    
-                    if (isInst) {
-                        const baseDate = formValues.date;
-                        const [y, m, d] = baseDate.split('-');
-                        let currentY = parseInt(y);
-                        let currentM = parseInt(m);
-                        const targetDay = parseInt(d);
+                if (formValues) {
+                    const purchaseId = tx.purchaseId || tx.installmentGroupId || this.generateId();
 
-                        const myPerInst = formValues.myTotalVal / numInst;
+                    this.state.transactions = this.state.transactions.filter(t => !oldIds.includes(t.id));
+                    this.state.debts = this.state.debts.filter(d => !oldDebtIds.includes(d.id));
 
-                        for (let i = 0; i < numInst; i++) {
-                            const lastDayOfMonth = new Date(currentY, currentM, 0).getDate();
-                            const day = Math.min(targetDay, lastDayOfMonth);
-                            const newDate = `${currentY}-${String(currentM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    formValues.friends.forEach(f => {
+                        const prev = friendMap[f.name];
+                        f.debtId = prev ? prev.debtId : undefined;
+                    });
 
-                            if (myTxs[i]) {
-                                myTxs[i].date = newDate;
-                                myTxs[i].amount = myPerInst;
-                                myTxs[i].type = formValues.type;
-                                myTxs[i].categoryId = formValues.cat;
-                                myTxs[i].description = `${formValues.desc}${isSplit ? ' (Minha parte)' : ''} (${i+1}/${numInst})`;
-                                if (myTxs[i].cardId) myTxs[i].invoiceMonth = this.invoiceFor(myTxs[i].cardId, newDate);
-                            }
-
-                            currentM++; if (currentM > 12) { currentM = 1; currentY++; }
-                        }
-                        
-                        if (isSplit && formValues.friends) {
-                            this.state.transactions = this.state.transactions.filter(t => !theirTxs.map(x=>x.id).includes(t.id));
-                            
-                            formValues.friends.forEach(f => {
-                                let fAmtInst = f.val / numInst;
-                                let cY = parseInt(y); let cM = parseInt(m);
-                                
-                                let did = this.generateId();
-                                this.state.debts.push({
-                                    id: did, type: 'owes_me', title: `Divisão: ${formValues.desc} (${f.name})`,
-                                    totalAmount: f.val, paidAmount: f.paidCount * fAmtInst
-                                });
-                                
-                                for (let i = 1; i <= numInst; i++) {
-                                    const lDay = new Date(cY, cM, 0).getDate();
-                                    const td = Math.min(targetDay, lDay);
-                                    const dStr = `${cY}-${String(cM).padStart(2, '0')}-${String(td).padStart(2, '0')}`;
-                                    
-                                    const invMonth = myTxs[0]?.cardId ? this.invoiceFor(myTxs[0].cardId, dStr) : null;
-                                    
-                                    let fPaid = (i <= f.paidCount);
-                                    this.state.transactions.push({
-                                        id: this.generateId(), installmentGroupId: tx.installmentGroupId, description: `${formValues.desc} (${f.name}) (${i}/${numInst})`,
-                                        amount: fAmtInst, date: dStr, type: formValues.type, categoryId: thirdCat?.id,
-                                        isPaid: (myTxs[0] && myTxs[0].cardId) ? false : fPaid, cardId: myTxs[0]?.cardId || null, invoiceMonth: invMonth, splitName: f.name, friendHasPaid: fPaid, debtId: did
-                                    });
-                                    
-                                    cM++; if(cM > 12) { cM = 1; cY++; }
-                                }
-                            });
-                        }
-
-                    } else {
-                        const cardRef = tx.cardId || theirTxs[0]?.cardId || myTxs[0]?.cardId || null;
-                        const newInv = cardRef ? this.invoiceFor(cardRef, formValues.date) : null;
-                        const myDesc = `${formValues.desc}${isSplit ? ' (Minha parte)' : ''}`;
-
-                        if (myTxs[0]) {
-                            Object.assign(myTxs[0], {
-                                date: formValues.date,
-                                amount: formValues.myTotalVal,
-                                type: formValues.type,
-                                categoryId: formValues.cat,
-                                isPaid: cardRef ? false : formValues.isPaid,
-                                description: myDesc,
-                                cardId: cardRef,
-                                invoiceMonth: newInv,
-                                paymentMethod: cardRef ? 'credit' : myTxs[0].paymentMethod
-                            });
-                        } else if (formValues.myTotalVal > 0) {
-                            this.state.transactions.push({
-                                id: this.generateId(), description: myDesc, amount: formValues.myTotalVal,
-                                date: formValues.date, type: formValues.type, categoryId: formValues.cat,
-                                isPaid: cardRef ? false : formValues.isPaid,
-                                paymentMethod: cardRef ? 'credit' : 'pix',
-                                cardId: cardRef, invoiceMonth: newInv, dueDate: null
-                            });
-                        }
-
-                        if (isSplit && formValues.friends) {
-                            const oldIds = theirTxs.map(x => x.id);
-                            this.state.transactions = this.state.transactions.filter(t => !oldIds.includes(t.id));
-                            formValues.friends.forEach(f => {
-                                const fPaid = f.paidCount >= 1;
-                                const did = this.generateId();
-                                this.state.debts.push({
-                                    id: did, type: 'owes_me', title: `Divisão: ${formValues.desc} (${f.name})`,
-                                    totalAmount: f.val, paidAmount: fPaid ? f.val : 0
-                                });
-                                this.state.transactions.push({
-                                    id: this.generateId(), description: `${formValues.desc} (${f.name})`, amount: f.val,
-                                    date: formValues.date, type: formValues.type, categoryId: thirdCat?.id,
-                                    isPaid: cardRef ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: did,
-                                    paymentMethod: cardRef ? 'credit' : 'pix', cardId: cardRef, invoiceMonth: newInv, dueDate: null
-                                });
-                            });
-                        }
-                    }
-
-                    this.finishEditTx(tx);
+                    this.savePurchase(formValues, purchaseId);
+                    this.finishEditTx({ type: formValues.type, categoryId: formValues.cat, date: formValues.date });
                 }
             },
             
@@ -2445,7 +2246,7 @@
                                     <div class="flex items-start sm:items-center gap-2 sm:gap-3 flex-1 min-w-0 w-full">
                                         <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-base sm:text-lg flex-shrink-0 text-white shadow-sm bg-amber-500"><i class="ph ph-list-numbers"></i></div>
                                         <div class="flex flex-col min-w-0 flex-1">
-                                            <span class="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm md:text-base truncate w-full group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ${tx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(tx.description)}</span>
+                                            <span class="font-bold text-slate-800 dark:text-slate-100 text-xs sm:text-sm md:text-base truncate w-full group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ${tx.isPaid ? 'line-through opacity-50' : ''}">${this.escapeHTML(this.baseDescOf(tx))}</span>
                                             <div class="flex flex-wrap items-center gap-2 mt-0.5 w-full">
                                                 <span class="text-[9px] sm:text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold truncate ${tx.isPaid ? 'opacity-50' : ''}">${d}/${m}/${y} • (Ver histórico)</span>
                                                 ${!isSubItem ? cardBadge : ''}
@@ -2475,8 +2276,6 @@
                     } else {
                         paidActionHtml = `<button onclick="app.togglePaid('${tx.id}')" class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full ${tx.isPaid ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'text-slate-400 hover:text-emerald-500 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800'} active:scale-95 flex-shrink-0 transition-colors" title="Marcar como Pago"><i class="ph ph-check-circle text-sm sm:text-lg"></i></button>`;
                     }
-
-                    const singleDue = tx.paymentMethod === 'boleto' && tx.dueDate && !isSubItem ? '' : '';
 
                     return `
                         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 ${isSubItem ? 'bg-slate-50/50 hover:bg-slate-100/50 dark:bg-slate-800/40 dark:hover:bg-slate-800/60 pl-6 sm:pl-12 border-l-4' : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 border-b border-slate-100/50 dark:border-slate-700/30'} transition-colors gap-2 sm:gap-3 w-full" ${isSubItem ? `style="border-color: ${cardColor}"` : ''}>
