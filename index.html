@@ -1525,6 +1525,35 @@
                         });
                     }
 
+                    // NOVO: marca como pagas as parcelas dos amigos desta fatura
+                    const friendTxs = cardTxs.filter(t => t.splitName && !t.friendHasPaid);
+                    if (friendTxs.length) {
+                        let rCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                        if (!rCat) {
+                            rCat = { id: this.generateId(), name: 'Recebimento de Dívida', icon: '🤑', type: 'income', budgetLimit: 0 };
+                            this.state.categories.push(rCat);
+                        }
+                        const today = new Date().toISOString().split('T')[0];
+                        friendTxs.forEach(tx => {
+                            tx.friendHasPaid = true;
+                            tx.paidByPaymentId = paymentId;
+                            const debt = tx.debtId ? this.state.debts.find(d => d.id === tx.debtId) : null;
+                            if (debt) debt.paidAmount += tx.amount;
+                            const instMatch = tx.description.match(/(\(\d+\/\d+\))/);
+                            this.state.transactions.push({
+                                id: this.generateId(),
+                                debtId: tx.debtId,
+                                friendPaymentOf: paymentId,
+                                description: `Pagamento: Divisão c/ ${tx.splitName}${instMatch ? ' ' + instMatch[1] : ''}`,
+                                amount: tx.amount,
+                                date: today,
+                                type: 'income',
+                                categoryId: rCat.id,
+                                isPaid: true
+                            });
+                        });
+                    }
+
                     this.saveData(); this.renderCards();
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Fatura Paga!', showConfirmButton: false, timer: 1500 });
@@ -2403,7 +2432,16 @@
                 if (tx.type === 'cc_payment') {
                     const related = this.state.transactions.filter(t => t.cardId === tx.paidCardId && t.invoiceMonth === tx.paidInvoiceMonth);
                     related.forEach(t => t.isPaid = false);
-                    this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id);
+
+                    // NOVO: desfaz a baixa dos amigos desta fatura
+                    this.state.transactions.filter(t => t.paidByPaymentId === id).forEach(t => {
+                        t.friendHasPaid = false;
+                        t.paidByPaymentId = null;
+                        const debt = t.debtId ? this.state.debts.find(d => d.id === t.debtId) : null;
+                        if (debt) debt.paidAmount = Math.max(0, debt.paidAmount - t.amount);
+                    });
+
+                    this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id && t.friendPaymentOf !== id);
                 }
 
                 this.state.transactions = this.state.transactions.filter(t => t.id !== id); 
