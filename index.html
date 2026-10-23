@@ -248,7 +248,6 @@
                 </div>
             </div>
 
-            <!-- Filtros e ordenação -->
             <div class="card !p-4 flex flex-col sm:flex-row gap-3 w-full items-stretch">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                     <i class="ph ph-funnel text-slate-400 flex-shrink-0"></i>
@@ -424,6 +423,15 @@
                     </div>
                 </div>
 
+                <div class="card space-y-6 w-full md:col-span-2">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="p-2.5 bg-amber-100 dark:bg-amber-900/40 rounded-full text-amber-500 flex-shrink-0"><i class="ph ph-wrench text-2xl"></i></div>
+                        <h3 class="font-black text-xl md:text-2xl text-slate-800 dark:text-white truncate">Recalcular Dados</h3>
+                    </div>
+                    <p class="text-slate-500 font-medium text-sm">Reaplica as regras de fatura, dívidas e amigos a partir do extrato. Use se algum valor parecer inconsistente.</p>
+                    <button onclick="app.recalcAllNow()" class="btn-secondary w-full"><i class="ph ph-arrows-clockwise text-xl mr-2"></i> Recalcular agora</button>
+                </div>
+
                 <div class="md:col-span-2 mt-2">
                     <button onclick="app.clearAllData()" class="btn-secondary w-full text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 border border-red-200 dark:border-red-900/50"><i class="ph ph-warning-circle text-xl mr-2"></i> Apagar Dados da Conta Atual</button>
                 </div>
@@ -490,11 +498,8 @@
                     select.innerHTML += `<option value="${cat.id}">${cat.icon} ${app.escapeHTML(cat.name)}</option>`;
                 });
             }
-            
             const expenseOptions = document.getElementById('tx-expense-options');
-            if (expenseOptions) {
-                expenseOptions.style.display = type === 'expense' ? 'block' : 'none';
-            }
+            if (expenseOptions) expenseOptions.style.display = type === 'expense' ? 'block' : 'none';
         };
         
         window.updateEditSwalCat = function() {
@@ -630,6 +635,8 @@
                 this.loadProfiles();
                 this.loadData();
                 this.recalcInvoices();
+                this.recalcDebts();
+                this.saveData();
                 this.applyTheme(); 
                 this.populateCatFilter(); 
                 this.setDefaultsDates(); 
@@ -645,35 +652,28 @@
                 return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
             },
 
-            // Serializa um valor para ser usado como argumento JS dentro de um atributo onclick="..."
             jsArg(v) {
                 return this.escapeHTML(JSON.stringify(v));
             },
 
-            // Data de hoje no fuso LOCAL do usuário (YYYY-MM-DD), sem usar toISOString (que é UTC)
             todayISO() {
                 const d = new Date();
                 return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             },
 
-            // Arredonda para centavos, evitando erros de ponto flutuante
             round2(v) {
                 return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
             },
 
-            // Valor da parcela k (0-based) de um total dividido em n parcelas.
-            // A soma das parcelas é sempre exatamente o total (a diferença de centavos cai nas últimas parcelas).
             instPart(total, n, k) {
                 return this.round2(this.round2(total * (k + 1) / n) - this.round2(total * k / n));
             },
 
-            // Escapa um campo CSV (separador ';', aspas, quebras de linha)
             csvCell(v) {
                 const s = String(v ?? '').replace(/[\r\n]+/g, ' ');
                 return /[;"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
             },
 
-            // Lê uma linha CSV respeitando campos entre aspas
             parseCSVLine(line, sep = ';') {
                 const out = [];
                 let cur = '';
@@ -712,9 +712,23 @@
                 return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
             },
 
-            // Fatura de uma compra: compra até o dia de fechamento (inclusive) entra na fatura
-            // do próprio mês; depois do fechamento, entra na fatura do mês seguinte.
-            // O dia de vencimento não altera a fatura; ele só indica a data de pagamento.
+            /* ---------- Mês de cada lançamento (fonte única de verdade) ---------- */
+
+            // Compra de cartão pertence à fatura; o resto pertence ao mês da data.
+            txMonth(t) {
+                if (t.cardId && t.type !== 'cc_payment' && t.invoiceMonth) return t.invoiceMonth;
+                return t.date.slice(0, 7);
+            },
+
+            // Vazio = todos os meses
+            inMonth(t, monthKey) {
+                return !monthKey || this.txMonth(t) === monthKey;
+            },
+
+            /* ---------- Faturas ---------- */
+
+            // Compra até o dia de fechamento (inclusive) entra na fatura do próprio mês;
+            // depois do fechamento, entra na fatura do mês seguinte.
             getInvoiceMonth(y, mNum, dNum, cDay, dueDay) {
                 let tm = mNum;
                 let ty = y;
@@ -732,19 +746,70 @@
                 return this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
             },
 
-            // Recalcula a fatura de todas as compras de cartão já salvas, com a regra atual.
-            // Só mexe em compras ainda NÃO pagas, para não alterar o histórico.
+            // Recalcula a fatura de compras de cartão ainda NÃO pagas, com a regra atual.
             recalcInvoices() {
-                let changed = false;
                 this.state.transactions.forEach(t => {
                     if (!t.cardId || t.type === 'cc_payment' || t.isPaid) return;
                     const card = this.state.cards.find(c => c.id === t.cardId);
                     if (!card) return;
                     const [y, m, d] = t.date.split('-').map(Number);
-                    const novo = this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
-                    if (novo !== t.invoiceMonth) { t.invoiceMonth = novo; changed = true; }
+                    t.invoiceMonth = this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
                 });
-                if (changed) this.saveData();
+            },
+
+            /* ---------- Dívidas derivadas dos lançamentos ---------- */
+
+            // Recalcula totais e pagamentos de cada dívida a partir dos lançamentos.
+            // Remove dívidas divididas sem lançamentos e recebimentos órfãos.
+            recalcDebts() {
+                // 1) Remove recebimentos de amigos cuja parcela de origem não existe mais
+                const ids = new Set(this.state.transactions.map(t => t.id));
+                this.state.transactions = this.state.transactions.filter(t => !(t.paidByTxId && !ids.has(t.paidByTxId)));
+
+                // 2) Calcula cada dívida
+                this.state.debts = this.state.debts.filter(d => {
+                    const linked = this.state.transactions.filter(t => t.debtId === d.id);
+                    const isSplit = (d.title || '').startsWith('Divisão: ');
+                    if (isSplit) {
+                        const shares = linked.filter(t => t.splitName && !t.isAdvance);
+                        if (shares.length === 0) return false;
+                        d.totalAmount = this.round2(shares.reduce((s, t) => s + Number(t.amount), 0));
+                        d.paidAmount = this.round2(shares.filter(t => t.friendHasPaid).reduce((s, t) => s + Number(t.amount), 0));
+                    } else {
+                        d.paidAmount = this.round2(linked
+                            .filter(t => t.isPaid && !t.paidByTxId && !t.isAdvance && !t.splitName)
+                            .reduce((s, t) => s + Number(t.amount), 0));
+                    }
+                    return true;
+                });
+
+                // 3) Remove lançamentos de dívidas que foram apagadas
+                const debtIds = new Set(this.state.debts.map(d => d.id));
+                this.state.transactions = this.state.transactions.filter(t => !t.debtId || debtIds.has(t.debtId));
+            },
+
+            // Botão "Recalcular" em Ajustes
+            recalcAllNow() {
+                this.recalcInvoices();
+                this.recalcDebts();
+                this.saveData();
+                this.renderAll();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Dados recalculados!', showConfirmButton: false, timer: 1800 });
+            },
+
+            // Re-renderiza somente as telas ativas
+            renderAll() {
+                const active = document.querySelector('.view-section.active');
+                if (!active) return;
+                const id = active.id;
+                if (id === 'dashboard') this.renderDashboard();
+                if (id === 'transactions') this.renderTransactions();
+                if (id === 'debts') this.renderDebts();
+                if (id === 'goals') this.renderGoals();
+                if (id === 'cards') this.renderCards();
+                if (id === 'forecast') this.renderForecastTab();
+                if (id === 'friends') this.renderFriends();
+                if (id === 'cadastros') { this.renderCategories(); this.renderRecurringList(); }
             },
 
             ensureCategory(name, icon, type) {
@@ -757,8 +822,6 @@
                 return this.ensureCategory('Recebimento de Dívida', '🤑', 'income');
             },
 
-            // Uma compra de cartão é "histórico" se todas as parcelas já estão pagas
-            // e nenhuma das faturas dela foi quitada por um pagamento registrado no app.
             isHistoricalPurchase(txs) {
                 const cardTxs = txs.filter(t => t.cardId);
                 if (!cardTxs.length || !cardTxs.every(t => t.isPaid)) return false;
@@ -768,16 +831,11 @@
                 return !cardTxs.some(t => paidInvoices.has(`${t.cardId}|${t.invoiceMonth}`));
             },
 
-            // Marca a fatura inteira como já paga (histórico), sem criar pagamento e sem mexer no saldo.
             markInvoiceAsHistory(cardId, invoiceMonth) {
                 const cardTxs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid);
                 cardTxs.forEach(t => {
                     t.isPaid = true;
-                    if (t.splitName && !t.friendHasPaid) {
-                        t.friendHasPaid = true;
-                        const debt = t.debtId ? this.state.debts.find(d => d.id === t.debtId) : null;
-                        if (debt) debt.paidAmount = this.round2(debt.paidAmount + t.amount);
-                    }
+                    if (t.splitName && !t.friendHasPaid) t.friendHasPaid = true;
                 });
                 this.saveData(); this.renderCards();
                 if (document.getElementById('friends').classList.contains('active')) this.renderFriends();
@@ -873,7 +931,6 @@
                 const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
                 const total = this.round2(Number(v.val) * mult);
                 const card = v.paymentMethod === 'credit' && v.cardId ? this.state.cards.find(c => c.id === v.cardId) : null;
-                // Histórico: compra no cartão que já foi paga antes de usar o app. Não gera receita nem pagamento.
                 const history = !!(card && v.isHistory);
 
                 const friends = v.isSplit ? v.friends.map(f => {
@@ -947,12 +1004,11 @@
                 return purchaseId;
             },
 
-            // Fluxo de caixa do mês (ou de todos os meses se monthKey = '').
-            // Só conta transações JÁ PAGAS. Cofrinhos (appSavedAmount) são descontados do saldo.
+            // Fluxo de caixa do mês (ou de todos se monthKey = ''). Só transações já pagas.
             getCashFlow(monthKey) {
                 const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
                 const debtCatId = debtCat ? debtCat.id : null;
-                const paidTx = this.state.transactions.filter(t => t.date.startsWith(monthKey) && t.isPaid);
+                const paidTx = this.state.transactions.filter(t => this.inMonth(t, monthKey) && t.isPaid);
 
                 const income = this.round2(paidTx
                     .filter(t => t.type === 'income' && t.categoryId !== debtCatId)
@@ -980,8 +1036,9 @@
                 if (mobileLogo) mobileLogo.src = iconUrl;
             },
 
+            // Amigos vêm dos lançamentos e das dívidas divididas (não de uma lista separada)
             getKnownFriends() {
-                const set = new Set(this.state.friends || []);
+                const set = new Set();
                 this.state.transactions.forEach(t => { if (t.splitName) set.add(t.splitName); });
                 this.state.debts.forEach(d => {
                     if (d.type === 'owes_me' && d.title && d.title.startsWith('Divisão: ')) {
@@ -1013,20 +1070,20 @@
                 this.state.debts = parse('debts', []);
                 this.state.goals = parse('goals', []); 
                 this.state.cards = parse('cards', []); 
-                this.state.friends = parse('friends', []); 
+                this.state.friends = [];
                 
                 this.state.theme = localStorage.getItem('gf_theme') || 'light';
                 
                 this.state.transactions.forEach(t => {
-                    if (t.isPaid === undefined) {
-                        t.isPaid = false;
-                    }
+                    if (t.isPaid === undefined) t.isPaid = false;
                 });
-
-                this.state.friends = this.getKnownFriends();
             },
 
             saveData() {
+                // Antes de gravar, dívidas e amigos são sempre recalculados a partir do extrato
+                this.recalcDebts();
+                this.state.friends = this.getKnownFriends();
+
                 const save = (key, data) => localStorage.setItem(`${this.prefix}${key}`, JSON.stringify(data));
                 
                 save('transactions', this.state.transactions);
@@ -1112,13 +1169,7 @@
                     if(res.isConfirmed) {
                         const p = this.profiles.find(x => x.id === id);
                         if(p) {
-                            localStorage.removeItem(`${p.prefix}transactions`);
-                            localStorage.removeItem(`${p.prefix}categories`);
-                            localStorage.removeItem(`${p.prefix}recurring`);
-                            localStorage.removeItem(`${p.prefix}debts`);
-                            localStorage.removeItem(`${p.prefix}goals`);
-                            localStorage.removeItem(`${p.prefix}cards`);
-                            localStorage.removeItem(`${p.prefix}friends`);
+                            ['transactions','categories','recurring','debts','goals','cards','friends'].forEach(k => localStorage.removeItem(`${p.prefix}${k}`));
                         }
                         this.profiles = this.profiles.filter(x => x.id !== id);
                         localStorage.setItem('konta_profiles', JSON.stringify(this.profiles));
@@ -1204,11 +1255,7 @@
                         };
 
                         if (rec.isSplit && rec.type === 'expense') {
-                            let thirdCat = this.state.categories.find(c => c.name === 'Compra de Terceiros');
-                            if (!thirdCat) {
-                                thirdCat = { id: this.generateId(), name: 'Compra de Terceiros', icon: '🤝', type: 'expense', budgetLimit: 0 };
-                                this.state.categories.push(thirdCat);
-                            }
+                            let thirdCat = this.ensureCategory('Compra de Terceiros', '🤝', 'expense');
 
                             rec.friends.forEach(f => {
                                 let did = this.generateId();
@@ -1253,7 +1300,7 @@
                 }
 
                 const monthKey = dateString.slice(0, 7);
-                const monthExpenses = this.state.transactions.filter(t => t.date.startsWith(monthKey) && t.type === 'expense' && t.type !== 'cc_payment' && t.categoryId === categoryId);
+                const monthExpenses = this.state.transactions.filter(t => this.inMonth(t, monthKey) && t.type === 'expense' && t.categoryId === categoryId);
                 const totalSpent = monthExpenses.reduce((acc, t) => acc + Number(t.amount), 0);
 
                 if (totalSpent > cat.budgetLimit) {
@@ -1277,13 +1324,16 @@
                 this.updateStatusIcon();
 
                 const filter = document.getElementById('dash-month-filter').value;
-                const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
 
                 const flow = this.getCashFlow(filter);
                 document.getElementById('dash-balance').innerText = this.formatCurrency(flow.balance);
-                
-                const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type !== 'cc_payment');
-                const monthIncome = monthTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
+
+                // Despesas/receitas do mês usam o mesmo critério do extrato (txMonth)
+                const monthTx = this.state.transactions.filter(t => this.inMonth(t, filter) && t.type !== 'cc_payment');
+                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
+                const monthIncome = monthTx
+                    .filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null))
+                    .reduce((a,b) => a + Number(b.amount), 0);
                 const monthExpense = monthTx.filter(t => t.type === 'expense').reduce((a,b) => a + Number(b.amount), 0);
                 
                 document.getElementById('dash-income').innerText = this.formatCurrency(monthIncome); 
@@ -1300,7 +1350,7 @@
                             alertsDiv.innerHTML += `
                                 <div class="p-4 rounded-2xl flex flex-col gap-2 ${isOver ? 'bg-red-50 text-red-800 dark:bg-red-900/20 dark:text-red-300' : 'bg-yellow-50 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300'} w-full">
                                     <div class="flex items-center justify-between gap-2">
-                                        <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${cat.icon}</span> <span class="font-bold truncate">${this.escapeHTML(cat.name)}</span></div>
+                                        <div class="flex items-center gap-2 min-w-0"><span class="text-base bg-white/50 dark:bg-black/20 p-1.5 rounded-full flex-shrink-0">${this.escapeHTML(cat.icon)}</span> <span class="font-bold truncate">${this.escapeHTML(cat.name)}</span></div>
                                         <span class="font-black text-base flex-shrink-0">${pct.toFixed(0)}%</span>
                                     </div>
                                     <div class="w-full bg-black/5 dark:bg-white/10 rounded-full h-2 mt-1"><div class="${isOver ? 'bg-red-500' : 'bg-yellow-500'} h-2 rounded-full" style="width: ${Math.min(pct, 100)}%"></div></div>
@@ -1326,7 +1376,7 @@
                         const displayAmt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
                         totalFixed += Number(displayAmt);
                         const cat = this.state.categories.find(c => c.id === r.categoryId);
-                        fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl w-full mb-2"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-sm shadow-sm border border-slate-100 dark:border-slate-700/50">${cat ? cat.icon : '💸'}</div><span class="font-bold text-slate-700 dark:text-slate-200 text-sm">${this.escapeHTML(r.description)}${r.isSplit ? ' (Sua parte)' : ''}</span></div><span class="font-black text-rose-500">${this.formatCurrency(displayAmt)}</span></div>`;
+                        fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl w-full mb-2"><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-sm shadow-sm border border-slate-100 dark:border-slate-700/50">${cat ? this.escapeHTML(cat.icon) : '💸'}</div><span class="font-bold text-slate-700 dark:text-slate-200 text-sm">${this.escapeHTML(r.description)}${r.isSplit ? ' (Sua parte)' : ''}</span></div><span class="font-black text-rose-500">${this.formatCurrency(displayAmt)}</span></div>`;
                     });
                     fixedDiv.innerHTML += `<div class="flex items-center justify-between p-3 mt-2 border-t border-slate-200 dark:border-slate-700 w-full"><span class="font-black text-slate-800 dark:text-slate-200 text-sm">Total Fixo (Sua parte):</span><span class="font-black text-rose-500">${this.formatCurrency(totalFixed)}</span></div>`;
                 }
@@ -1346,24 +1396,19 @@
                     const monthKey = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}`;
                     const monthName = futureDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
                     
-                    // 1) Transações não pagas, separadas em: faturas de cartão, dívidas agendadas e demais (Pix/boleto)
                     const cardTotals = {};
                     let pendingNoCard = 0;
                     let upcomingDebts = 0;
 
                     this.state.transactions.forEach(t => {
                         if (t.isPaid || t.type !== 'expense') return;
+                        if (this.txMonth(t) !== monthKey) return;
                         const amt = Number(t.amount);
-                        if (t.cardId) {
-                            if (t.invoiceMonth === monthKey) cardTotals[t.cardId] = (cardTotals[t.cardId] || 0) + amt;
-                            return;
-                        }
-                        if (!t.date.startsWith(monthKey)) return;
+                        if (t.cardId) { cardTotals[t.cardId] = (cardTotals[t.cardId] || 0) + amt; return; }
                         if (t.debtId) upcomingDebts += amt;
                         else pendingNoCard += amt;
                     });
 
-                    // 2) Contas fixas: só entram se ainda NÃO foram lançadas neste mês (evita dupla contagem)
                     const fixedCosts = this.state.recurring.filter(r => r.type === 'expense').reduce((acc, r) => {
                         const alreadyGenerated = this.state.transactions.some(t => t.recurringId === r.id && t.date.startsWith(monthKey));
                         const processedButDeleted = r.lastProcessedMonth && (r.lastProcessedMonth >= monthKey) && !alreadyGenerated;
@@ -1412,12 +1457,13 @@
 
             renderChart(expensesByCat = null) {
                 if(!expensesByCat) {
-                    const filter = document.getElementById('dash-month-filter').value; const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type === 'expense' && t.type !== 'cc_payment');
+                    const filter = document.getElementById('dash-month-filter').value;
+                    const monthTx = this.state.transactions.filter(t => this.inMonth(t, filter) && t.type === 'expense');
                     expensesByCat = {}; monthTx.forEach(t => expensesByCat[t.categoryId] = (expensesByCat[t.categoryId] || 0) + Number(t.amount));
                 }
                 const ctx = document.getElementById('expenseChart').getContext('2d'); if (this.chartInstance) this.chartInstance.destroy();
                 const labels = []; const data = []; const colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#10b981', '#0ea5e9'];
-                Object.keys(expensesByCat).forEach(catId => { if (expensesByCat[catId] > 0) { const cat = this.state.categories.find(c => c.id === catId); labels.push(cat ? `${cat.icon} ${this.escapeHTML(cat.name)}` : 'Outros'); data.push(expensesByCat[catId]); } });
+                Object.keys(expensesByCat).forEach(catId => { if (expensesByCat[catId] > 0) { const cat = this.state.categories.find(c => c.id === catId); labels.push(cat ? `${cat.icon} ${cat.name}` : 'Outros'); data.push(expensesByCat[catId]); } });
                 const isDark = this.state.theme === 'dark';
                 if(data.length === 0) { labels.push('Sem despesas'); data.push(1); colors.unshift(isDark ? '#334155' : '#f1f5f9'); }
                 this.chartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, borderRadius: 20 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { backgroundColor: isDark ? '#1e293b' : '#ffffff', titleColor: isDark ? '#f8fafc' : '#0f172a', bodyColor: isDark ? '#cbd5e1' : '#475569', padding: 12, cornerRadius: 16, displayColors: false, callbacks: { label: (ctx) => data[0] === 1 && labels[0]==='Sem despesas' ? '' : this.formatCurrency(ctx.raw) } } } } });
@@ -1445,16 +1491,7 @@
                     labels.push(`${monthName}/${String(futureDate.getFullYear()).slice(2)}`);
 
                     const txSum = this.state.transactions
-                        .filter(t => {
-                            if (t.isPaid) return false;
-                            if (t.type !== 'expense' || t.type === 'cc_payment') return false;
-                            
-                            if (t.cardId && t.invoiceMonth) {
-                                return t.invoiceMonth === monthKey;
-                            }
-                            
-                            return t.date.startsWith(monthKey);
-                        })
+                        .filter(t => !t.isPaid && t.type === 'expense' && this.txMonth(t) === monthKey)
                         .reduce((acc, t) => acc + Number(t.amount), 0);
                     
                     const recSum = this.state.recurring
@@ -1462,7 +1499,6 @@
                         .reduce((acc, r) => {
                             const alreadyGenerated = this.state.transactions.some(t => t.recurringId === r.id && t.date.startsWith(monthKey));
                             const processedButDeleted = r.lastProcessedMonth && (r.lastProcessedMonth >= monthKey) && !alreadyGenerated;
-                            
                             if (alreadyGenerated || processedButDeleted) return acc;
                             const amt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
                             return acc + Number(amt);
@@ -1483,12 +1519,7 @@
                     type: 'bar',
                     data: {
                         labels: labels,
-                        datasets: [{
-                            label: 'Previsão',
-                            data: data,
-                            backgroundColor: '#ef4444',
-                            borderRadius: 6
-                        }]
+                        datasets: [{ label: 'Previsão', data: data, backgroundColor: '#ef4444', borderRadius: 6 }]
                     },
                     options: {
                         responsive: true, maintainAspectRatio: false,
@@ -1565,7 +1596,7 @@
                     }
                 });
                 if (formValues && formValues.name && formValues.limit) {
-                    card.name = formValues.name; card.limit = formValues.limit; card.closingDay = formValues.closingDay; card.dueDay = formValues.dueDay; card.color = formValues.color;
+                    Object.assign(card, formValues);
                     this.recalcInvoices();
                     this.saveData(); this.renderCards();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
@@ -1778,16 +1809,11 @@
                 });
             },
 
-            // Registra o pagamento de uma parcela de amigo: marca como paga, abate a dívida e cria a receita
-            // ligada à parcela (paidByTxId) para que possa ser removida depois.
+            // Marca a parcela do amigo como paga e cria a receita ligada a ela (paidByTxId).
+            // A dívida é recalculada em saveData().
             registerFriendPayment(tx, date, paymentId = null) {
                 tx.friendHasPaid = true;
                 if (paymentId) tx.paidByPaymentId = paymentId;
-
-                if (tx.debtId) {
-                    const debt = this.state.debts.find(d => d.id === tx.debtId);
-                    if (debt) debt.paidAmount = this.round2(debt.paidAmount + tx.amount);
-                }
 
                 const instMatch = tx.description.match(/(\(\d+\/\d+\))/);
                 const instStr = instMatch ? ' ' + instMatch[1] : '';
@@ -1808,16 +1834,10 @@
                 this.state.transactions.push(incomeTx);
             },
 
-            // Desfaz o pagamento de uma parcela de amigo: remove a receita gerada e reverte a dívida
+            // Desfaz o pagamento da parcela: remove a receita ligada. Dívida recalculada em saveData().
             undoFriendPayment(tx) {
                 tx.friendHasPaid = false;
                 tx.paidByPaymentId = null;
-
-                if (tx.debtId) {
-                    const debt = this.state.debts.find(d => d.id === tx.debtId);
-                    if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - tx.amount));
-                }
-
                 this.state.transactions = this.state.transactions.filter(t => t.paidByTxId !== tx.id);
             },
 
@@ -1849,8 +1869,7 @@
                 if (!thirdCat) return;
                 const txs = this.state.transactions.filter(t => 
                     t.cardId && t.categoryId === thirdCat.id && t.splitName === name &&
-                    (t.invoiceMonth ? t.invoiceMonth === monthKey : t.date.slice(0,7) === monthKey) &&
-                    !t.friendHasPaid
+                    this.txMonth(t) === monthKey && !t.friendHasPaid
                 );
                 if (txs.length === 0) {
                     Swal.fire('Ops!', 'Não há parcelas pendentes neste mês.', 'info');
@@ -1888,7 +1907,6 @@
                     return;
                 }
 
-                // Filtros
                 const filterMode = (document.getElementById('friends-filter') || {}).value || 'all';
                 const sortMode = (document.getElementById('friends-sort') || {}).value || 'debt';
 
@@ -1903,27 +1921,20 @@
                         }
                         if (!friendsMap[name]) friendsMap[name] = { totalPending: 0, totalPaid: 0, items: [], byMonth: {} };
                         
-                        if (!t.friendHasPaid) {
-                            friendsMap[name].totalPending += Number(t.amount);
-                        } else {
-                            friendsMap[name].totalPaid += Number(t.amount);
-                        }
+                        if (!t.friendHasPaid) friendsMap[name].totalPending += Number(t.amount);
+                        else friendsMap[name].totalPaid += Number(t.amount);
                         
-                        const monthKey = t.invoiceMonth ? t.invoiceMonth : t.date.slice(0, 7);
+                        const monthKey = this.txMonth(t);
                         if (!friendsMap[name].byMonth[monthKey]) {
                             friendsMap[name].byMonth[monthKey] = { totalPending: 0, totalPaid: 0, items: [] };
                         }
-                        if (!t.friendHasPaid) {
-                            friendsMap[name].byMonth[monthKey].totalPending += Number(t.amount);
-                        } else {
-                            friendsMap[name].byMonth[monthKey].totalPaid += Number(t.amount);
-                        }
+                        if (!t.friendHasPaid) friendsMap[name].byMonth[monthKey].totalPending += Number(t.amount);
+                        else friendsMap[name].byMonth[monthKey].totalPaid += Number(t.amount);
                         friendsMap[name].byMonth[monthKey].items.push(t);
                         friendsMap[name].items.push(t);
                     }
                 });
 
-                // Aplica filtro
                 let friendNames = Object.keys(friendsMap);
                 if (filterMode === 'pending') {
                     friendNames = friendNames.filter(n => friendsMap[n].totalPending > 0);
@@ -1936,7 +1947,6 @@
                     return;
                 }
 
-                // Ordenação
                 const today = new Date();
                 const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
                 const monthKeyToSortValue = (key) => {
@@ -1960,7 +1970,6 @@
                     return 0;
                 });
 
-                // Total geral para mini gráfico de proporção
                 const grandTotalPending = friendNames.reduce((s, n) => s + friendsMap[n].totalPending, 0);
 
                 friendNames.forEach((name, fi) => {
@@ -1988,7 +1997,6 @@
                         nextInvoiceKey = withPending || monthKeys[0];
                     }
 
-                    // Classifica meses em: destaque vs colapsados
                     const visibleMonthKeys = [];
                     const collapsedMonthKeys = [];
                     monthKeys.forEach(k => {
@@ -2088,7 +2096,6 @@
                         }).join('');
 
                         const monthPending = monthData.totalPending;
-                        // IDs baseados em índice (seguros para qualquer caractere no nome)
                         const monthCollapseId = `friend-month-${fi}-${monthKey}`;
                         const isExpanded = forceOpen || isNextInvoice;
 
@@ -2139,7 +2146,6 @@
                         `;
                     }
 
-                    // Mini gráfico de proporção no header
                     const pctOfTotal = grandTotalPending > 0 ? (data.totalPending / grandTotalPending) * 100 : 0;
                     const barWidth = Math.max(2, Math.min(100, pctOfTotal));
                     const barColor = data.totalPending > 0 ? 'bg-indigo-500' : 'bg-emerald-500';
@@ -2301,7 +2307,6 @@
 
                 const txs = this.collectPurchase(tx);
                 const oldIds = txs.map(t => t.id);
-                const oldDebtIds = txs.map(t => t.debtId).filter(Boolean);
                 const ownTxs = txs.filter(t => !t.splitName && !this.isAdvance(t));
                 const friendTxs = txs.filter(t => t.splitName);
                 const isSplit = friendTxs.length > 0;
@@ -2414,15 +2419,18 @@
                 if (formValues) {
                     const purchaseId = tx.purchaseId || tx.installmentGroupId || this.generateId();
 
-                    // Ao editar, remove também as receitas ligadas às parcelas antigas (paidByTxId) para não duplicar
+                    // Remove as parcelas antigas e as receitas ligadas a elas; recria a compra
                     const removedIds = new Set(oldIds);
-                    this.state.transactions = this.state.transactions.filter(t => !oldIds.includes(t.id) && !(t.paidByTxId && removedIds.has(t.paidByTxId)));
-                    this.state.debts = this.state.debts.filter(d => !oldDebtIds.includes(d.id));
+                    this.state.transactions = this.state.transactions.filter(t => !removedIds.has(t.id) && !(t.paidByTxId && removedIds.has(t.paidByTxId)));
 
                     formValues.friends.forEach(f => {
                         const prev = friendMap[f.name];
                         f.debtId = prev ? prev.debtId : undefined;
                     });
+
+                    // Dívidas antigas desta compra saem; savePurchase cria as novas
+                    const oldDebtIds = new Set(txs.map(t => t.debtId).filter(Boolean));
+                    this.state.debts = this.state.debts.filter(d => !oldDebtIds.has(d.id));
 
                     this.savePurchase(formValues, purchaseId);
                     this.finishEditTx({ type: formValues.type, categoryId: formValues.cat, date: formValues.date });
@@ -2504,48 +2512,25 @@
                 }
             },
             
+            // Apaga o lançamento. Dívidas, amigos e saldo são recalculados em saveData().
             executeDeleteTx(id, shouldRender = true) {
                 const tx = this.state.transactions.find(t => t.id === id);
                 if (!tx) return;
 
-                if (tx.debtId) {
-                    const debt = this.state.debts.find(d => d.id === tx.debtId);
-                    if (debt) {
-                        const cat = this.state.categories.find(c => c.id === tx.categoryId);
-                        const isPayment = cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
-                        
-                        if (isPayment) {
-                            if (tx.isPaid) {
-                                debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - tx.amount));
-                            }
-                        } else {
-                            debt.totalAmount = this.round2(debt.totalAmount - tx.amount);
-                            if (debt.totalAmount <= 0.01) {
-                                this.state.debts = this.state.debts.filter(d => d.id !== tx.debtId);
-                                this.state.transactions = this.state.transactions.filter(t => t.debtId !== tx.debtId && t.id !== id);
-                            }
-                        }
-                    }
-                }
-                
                 if (tx.type === 'cc_payment') {
                     const related = this.state.transactions.filter(t => t.cardId === tx.paidCardId && t.invoiceMonth === tx.paidInvoiceMonth);
                     related.forEach(t => t.isPaid = false);
 
-                    // Desfaz a baixa dos amigos desta fatura
                     this.state.transactions.filter(t => t.paidByPaymentId === id).forEach(t => {
                         t.friendHasPaid = false;
                         t.paidByPaymentId = null;
-                        const debt = t.debtId ? this.state.debts.find(d => d.id === t.debtId) : null;
-                        if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - t.amount));
                     });
 
                     this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id && t.friendPaymentOf !== id);
                 }
 
-                // Remove também a receita ligada a uma parcela de amigo, se existir
-                this.state.transactions = this.state.transactions.filter(t => t.id !== id && t.paidByTxId !== id); 
-                
+                this.state.transactions = this.state.transactions.filter(t => t.id !== id && t.paidByTxId !== id);
+
                 if (shouldRender) {
                     this.saveData(); 
                     this.renderTransactions(); 
@@ -2569,9 +2554,8 @@
 
                 const tbody = document.getElementById('tx-table-body'); tbody.innerHTML = '';
                 
-                let filtered = this.state.transactions;
+                let filtered = this.state.transactions.filter(t => this.inMonth(t, filterMonth));
 
-                if (filterMonth) { filtered = filtered.filter(t => t.date.startsWith(filterMonth)); }
                 if (hidePaid) { filtered = filtered.filter(t => !t.isPaid); }
                 if (search) { filtered = filtered.filter(t => t.description.toLowerCase().includes(search)); }
                 if (catFilter) { filtered = filtered.filter(t => t.categoryId === catFilter); }
@@ -2752,7 +2736,6 @@
 
                 let finalHtml = '';
                 let renderedInstGroups = new Set();
-                // Slug seguro para IDs de DOM (sem apóstrofos, espaços ou caracteres especiais)
                 const slug = (s) => encodeURIComponent(s).replace(/[^A-Za-z0-9]/g, '_');
 
                 reallyFinalList.forEach(item => {
@@ -2872,8 +2855,6 @@
                 const cat = this.state.categories.find(c => c.id === tx.categoryId);
                 const isDebtPay = tx.debtId && cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
                 if (isDebtPay) {
-                    const debt = this.state.debts.find(d => d.id === tx.debtId);
-                    if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount + (tx.isPaid ? tx.amount : -tx.amount)));
                     if (tx.isPaid) {
                         tx.description = tx.description.replace('[Agendado] ', '');
                     } else if (!tx.description.includes('[Agendado]')) {
@@ -2933,17 +2914,17 @@
                         if (res.isConfirmed) {
                             const diff = this.round2(formValues.totalAmount - oppRemaining);
                             if (Math.abs(diff) < 0.005) {
-                                existingOpposite.paidAmount = existingOpposite.totalAmount;
+                                existingOpposite.totalAmount = existingOpposite.paidAmount;
                                 Swal.fire('Quitadas!', 'Os valores se anularam.', 'success');
                             } else if (diff > 0) {
-                                existingOpposite.paidAmount = existingOpposite.totalAmount;
+                                existingOpposite.totalAmount = existingOpposite.paidAmount;
                                 formValues.totalAmount = diff;
                                 this.state.debts.push({ 
                                     id: this.generateId(), type: formValues.type, title: formValues.title, totalAmount: formValues.totalAmount, paidAmount: 0 
                                 });
                                 Swal.fire('Abatido!', `A dívida antiga zerou e a nova ficou em ${this.formatCurrency(formValues.totalAmount)}.`, 'success');
                             } else {
-                                existingOpposite.paidAmount = this.round2(existingOpposite.paidAmount + formValues.totalAmount);
+                                existingOpposite.totalAmount = this.round2(existingOpposite.totalAmount - formValues.totalAmount);
                                 Swal.fire('Abatido!', `O valor diminuiu a dívida antiga, restando ${this.formatCurrency(this.round2(existingOpposite.totalAmount - existingOpposite.paidAmount))}.`, 'success');
                             }
                             this.saveData(); this.renderDebts();
@@ -2997,15 +2978,9 @@
                     const isOwesMe = debt.type === 'owes_me';
                     const txType = isOwesMe ? 'income' : 'expense';
                     const catName = isOwesMe ? 'Recebimento de Dívida' : 'Pagamento de Dívida';
-                    
-                    let cat = this.state.categories.find(c => c.name === catName);
-                    if(!cat) { 
-                        cat = { id: this.generateId(), name: catName, icon: isOwesMe ? '🤑' : '💸', type: txType, budgetLimit: 0 }; 
-                        this.state.categories.push(cat); 
-                    }
+                    const cat = this.ensureCategory(catName, isOwesMe ? '🤑' : '💸', txType);
 
                     rows.forEach(r => {
-                        if (r.paid) debt.paidAmount = this.round2(debt.paidAmount + r.val);
                         this.state.transactions.push({ 
                             id: this.generateId(), 
                             debtId: debt.id,
@@ -3063,7 +3038,7 @@
                     debt.totalAmount = formValues.totalAmount; 
                     
                     const isOwesMe = debt.type === 'owes_me';
-                    this.state.transactions.filter(t => t.debtId === id).forEach(t => {
+                    this.state.transactions.filter(t => t.debtId === id && !t.splitName).forEach(t => {
                         let isAgendado = t.description.includes('[Agendado]');
                         t.description = `${isAgendado ? '[Agendado] ' : ''}${isOwesMe ? 'Recebimento de' : 'Pag. Dívida'}: ${formValues.title}`;
                     });
@@ -3073,6 +3048,7 @@
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 }); 
                 }
             },
+
             deleteDebt(id) { 
                 Swal.fire({ 
                     title: 'Apagar Dívida?', 
@@ -3099,6 +3075,7 @@
                     } 
                 }); 
             },
+
             renderDebts() {
                 const container = document.getElementById('debts-container'); container.innerHTML = '';
                 const m = (document.getElementById('debts-month-filter') || {}).value || '';
@@ -3448,7 +3425,6 @@
                                     val: Number(div.querySelector('.friend-val').value),
                                     paidCount: 0 
                                 });
-                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                             });
                             let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
                             myVal = this.round2(totalVal - friendsTotal);
@@ -3555,7 +3531,6 @@
                                     val: Number(div.querySelector('.friend-val').value),
                                     paidCount: 0
                                 });
-                                if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                             });
                             let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
                             myVal = this.round2(totalVal - friendsTotal);
@@ -3682,8 +3657,6 @@
                 e.target.value = ''; 
             },
 
-            // Exporta uma tabela plana: 1 cabeçalho + 1 linha por transação.
-            // Sem seções, subtotais ou totais, para que a planilha possa ser reimportada sem erros.
             exportCSV() { 
                 const header = ['Data', 'Status', 'Tipo', 'Categoria', 'Cartão/Fatura', 'Descrição', 'Valor'];
                 const sorted = [...this.state.transactions].sort((a, b) => a.date.localeCompare(b.date));
@@ -3730,7 +3703,6 @@
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
             },
 
-            // Importa o CSV exportado (ou o formato antigo), lendo colunas pelo nome do cabeçalho
             importCSV(e) { 
                 const file = e.target.files[0]; 
                 if (!file) return; 
@@ -3822,13 +3794,7 @@
                     cancelButtonText: 'Cancelar' 
                 }).then((res) => { 
                     if (res.value === 'CONFIRMAR') { 
-                        localStorage.removeItem(`${this.prefix}transactions`);
-                        localStorage.removeItem(`${this.prefix}categories`);
-                        localStorage.removeItem(`${this.prefix}recurring`);
-                        localStorage.removeItem(`${this.prefix}debts`);
-                        localStorage.removeItem(`${this.prefix}goals`);
-                        localStorage.removeItem(`${this.prefix}cards`);
-                        localStorage.removeItem(`${this.prefix}friends`);
+                        ['transactions','categories','recurring','debts','goals','cards','friends'].forEach(k => localStorage.removeItem(`${this.prefix}${k}`));
                         location.reload(); 
                     } 
                 }); 
