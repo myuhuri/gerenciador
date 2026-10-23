@@ -741,6 +741,34 @@
                 return this.ensureCategory('Recebimento de Dívida', '🤑', 'income');
             },
 
+            // Uma compra de cartão é "histórico" se todas as parcelas já estão pagas
+            // e nenhuma das faturas dela foi quitada por um pagamento registrado no app.
+            isHistoricalPurchase(txs) {
+                const cardTxs = txs.filter(t => t.cardId);
+                if (!cardTxs.length || !cardTxs.every(t => t.isPaid)) return false;
+                const paidInvoices = new Set(this.state.transactions
+                    .filter(t => t.type === 'cc_payment' && t.paidCardId)
+                    .map(t => `${t.paidCardId}|${t.paidInvoiceMonth}`));
+                return !cardTxs.some(t => paidInvoices.has(`${t.cardId}|${t.invoiceMonth}`));
+            },
+
+            // Marca a fatura inteira como já paga (histórico), sem criar pagamento e sem mexer no saldo.
+            markInvoiceAsHistory(cardId, invoiceMonth) {
+                const cardTxs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid);
+                cardTxs.forEach(t => {
+                    t.isPaid = true;
+                    if (t.splitName && !t.friendHasPaid) {
+                        t.friendHasPaid = true;
+                        const debt = t.debtId ? this.state.debts.find(d => d.id === t.debtId) : null;
+                        if (debt) debt.paidAmount = this.round2(debt.paidAmount + t.amount);
+                    }
+                });
+                this.saveData(); this.renderCards();
+                if (document.getElementById('friends').classList.contains('active')) this.renderFriends();
+                if (document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
+                Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Marcada como histórico!', showConfirmButton: false, timer: 1800 });
+            },
+
             isAdvance(t) {
                 return !!t.isAdvance || (t.description || '').startsWith('Adiantamento:');
             },
@@ -808,6 +836,7 @@
                     instCount: n,
                     instMode: g('swal-installment-mode')?.value || 'total',
                     isPaid: g('swal-tx-ispaid') ? g('swal-tx-ispaid').checked : true,
+                    isHistory: !!g('swal-tx-history')?.checked,
                     isSplit,
                     friends
                 };
@@ -828,20 +857,22 @@
                 const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
                 const total = this.round2(Number(v.val) * mult);
                 const card = v.paymentMethod === 'credit' && v.cardId ? this.state.cards.find(c => c.id === v.cardId) : null;
+                // Histórico: compra no cartão que já foi paga antes de usar o app. Não gera receita nem pagamento.
+                const history = !!(card && v.isHistory);
 
                 const friends = v.isSplit ? v.friends.map(f => {
                     if (f.name && !this.state.friends.includes(f.name)) this.state.friends.push(f.name);
                     return {
                         name: f.name,
                         total: this.round2(Number(f.val) * mult),
-                        paid: Number(f.paidCount) || 0,
+                        paid: history ? n : (Number(f.paidCount) || 0),
                         debtId: f.debtId || this.generateId()
                     };
                 }) : [];
 
                 const myTotal = this.round2(total - friends.reduce((s, f) => s + f.total, 0));
                 const thirdCat = friends.length ? this.ensureCategory('Compra de Terceiros', '🤝', 'expense') : null;
-                const recCat = friends.some(f => f.paid > 0) ? this.getDebtCategory() : null;
+                const recCat = friends.some(f => f.paid > 0 && !history) ? this.getDebtCategory() : null;
                 const group = n > 1 ? purchaseId : undefined;
                 const base = {
                     purchaseId,
@@ -859,7 +890,7 @@
                         id: f.debtId, type: 'owes_me', title: `Divisão: ${v.desc} (${f.name})`,
                         totalAmount: f.total, paidAmount: paidAmt
                     });
-                    if (f.paid > 0) {
+                    if (f.paid > 0 && !history) {
                         this.state.transactions.push({
                             id: this.generateId(), purchaseId, isAdvance: true, debtId: f.debtId,
                             description: `Adiantamento: ${v.desc} (${f.name})${n > 1 ? ` - ${Math.min(f.paid, n)} parc.` : ''}`,
@@ -883,7 +914,7 @@
                             ...common, id: this.generateId(),
                             description: `${v.desc}${v.isSplit ? ' (Minha parte)' : ''}${suffix}`,
                             amount: myAmt, categoryId: v.cat,
-                            isPaid: card ? false : (k === 0 ? !!v.isPaid : false)
+                            isPaid: card ? history : (k === 0 ? !!v.isPaid : false)
                         });
                     }
 
@@ -893,7 +924,7 @@
                             ...common, id: this.generateId(),
                             description: `${v.desc} (${f.name})${suffix}`,
                             amount: this.instPart(f.total, n, k), categoryId: thirdCat.id,
-                            isPaid: card ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: f.debtId
+                            isPaid: card ? history : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: f.debtId
                         });
                     });
                 }
@@ -1539,24 +1570,29 @@
                 const cardTxs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid);
                 const total = this.round2(cardTxs.reduce((a,b) => a + Number(b.amount), 0));
 
-                const { value: amount } = await Swal.fire({
+                const res = await Swal.fire({
                     title: `Pagar Fatura`,
                     html: `
                         <p class="text-slate-700 dark:text-slate-200 mb-4 text-sm">Fatura de <b>${invoiceMonth.split('-').reverse().join('/')}</b><br>Total aberto: <b class="text-rose-500">${this.formatCurrency(total)}</b></p>
                         <div class="text-left px-4">
                             <label class="block text-xs font-bold text-slate-500 mb-1">Valor do Pagamento (R$):</label>
                             <input id="swal-inv-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${total.toFixed(2)}">
-                            <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Dica: Se pagar menos que o total, o restante será jogado para a próxima fatura.</p>
+                            <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Pagar agora lança a saída no saldo de hoje. Se essa fatura já foi paga antes, use "Já estava paga" para só registrar no histórico.</p>
                         </div>
                     `,
                     icon: 'question',
                     showCancelButton: true,
+                    showDenyButton: true,
                     confirmButtonText: 'Sim, Pagar',
+                    denyButtonText: 'Já estava paga (só histórico)',
                     cancelButtonText: 'Cancelar',
-                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500' },
+                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500', denyButton: 'swal2-deny !bg-slate-500' },
                     preConfirm: () => Number(document.getElementById('swal-inv-val').value)
                 });
 
+                if (res.isDenied) { this.markInvoiceAsHistory(cardId, invoiceMonth); return; }
+
+                const amount = res.value;
                 if (amount) {
                     if (amount > total + 0.01) { Swal.fire('Erro', 'Você não pode pagar mais do que o valor da fatura.', 'error'); return; }
 
@@ -1582,12 +1618,11 @@
                         let nm = parseInt(m) + 1; let ny = parseInt(y);
                         if (nm > 12) { nm = 1; ny++; }
                         const nextInvoiceMonth = `${ny}-${String(nm).padStart(2, '0')}`;
-                        
                         const cat = this.ensureCategory('Restante de Fatura', '💳', 'expense');
 
                         this.state.transactions.push({
                             id: this.generateId(),
-                            parentPaymentId: paymentId, 
+                            parentPaymentId: paymentId,
                             description: `Restante Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})`,
                             amount: remaining,
                             date: today,
@@ -1599,7 +1634,6 @@
                         });
                     }
 
-                    // Marca como pagas as parcelas dos amigos desta fatura (gera a receita correspondente)
                     cardTxs.filter(t => t.splitName && !t.friendHasPaid).forEach(tx => {
                         this.registerFriendPayment(tx, today, paymentId);
                     });
@@ -2156,6 +2190,9 @@
 
                                 <div id="tx-cc-container" class="hidden mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
                                     <select id="swal-tx-card-id" class="swal2-select !mt-0 !text-sm !py-2">${cardOpts}</select>
+                                    <label class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 mt-3 cursor-pointer">
+                                        <input type="checkbox" id="swal-tx-history" class="w-4 h-4"> Compra antiga já paga (só histórico, não mexe no saldo)
+                                    </label>
                                 </div>
 
                                 <div id="tx-boleto-container" class="hidden mb-3 border-b border-slate-200 dark:border-slate-700 pb-3">
@@ -2269,6 +2306,7 @@
                 const total = this.round2([...ownTxs, ...friendTxs].reduce((s, t) => s + Number(t.amount), 0));
                 const desc = this.baseDescOf(tx);
                 const isPaidInit = ownTxs[0] ? !!ownTxs[0].isPaid : true;
+                const isHist = method === 'credit' && this.isHistoricalPurchase(txs);
 
                 const cardOpts = this.state.cards.map(c => `<option value="${c.id}" ${c.id === ref.cardId ? 'selected' : ''}>${this.escapeHTML(c.name)}</option>`).join('');
                 const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}" ${c.id === (ownTxs[0]?.categoryId || tx.categoryId) ? 'selected' : ''}>${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
@@ -2304,6 +2342,9 @@
 
                             <div id="tx-cc-container" class="mt-2" style="display:${method === 'credit' ? 'block' : 'none'}">
                                 <select id="swal-tx-card-id" class="swal2-select !mt-0">${cardOpts}</select>
+                                <label class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 mt-3 cursor-pointer">
+                                    <input type="checkbox" id="swal-tx-history" class="w-4 h-4" ${isHist ? 'checked' : ''}> Compra antiga já paga (só histórico, não mexe no saldo)
+                                </label>
                             </div>
 
                             <div id="tx-boleto-container" class="mt-2" style="display:${method === 'boleto' ? 'block' : 'none'}">
@@ -2524,7 +2565,7 @@
                     const cat = this.state.categories.find(c => c.id === tx.categoryId); 
                     const isInc = tx.type === 'income'; 
                     const [y,m,d] = tx.date.split('-');
-                    let iconHtml = `<div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-base sm:text-lg flex-shrink-0">${cat ? cat.icon : '💸'}</div>`;
+                    let iconHtml = `<div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-base sm:text-lg flex-shrink-0">${cat ? this.escapeHTML(cat.icon) : '💸'}</div>`;
                     let cardBadge = '';
                     let cardColor = '#cbd5e1';
                     
