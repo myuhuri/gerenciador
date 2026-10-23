@@ -628,7 +628,8 @@
 
             init() {
                 this.loadProfiles();
-                this.loadData(); 
+                this.loadData();
+                this.recalcInvoices();
                 this.applyTheme(); 
                 this.populateCatFilter(); 
                 this.setDefaultsDates(); 
@@ -711,13 +712,13 @@
                 return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
             },
 
+            // Fatura de uma compra: compra até o dia de fechamento (inclusive) entra na fatura
+            // do próprio mês; depois do fechamento, entra na fatura do mês seguinte.
+            // O dia de vencimento não altera a fatura; ele só indica a data de pagamento.
             getInvoiceMonth(y, mNum, dNum, cDay, dueDay) {
-                let tm = mNum; let ty = y;
-                if (dueDay < cDay) {
-                    tm++;
-                    if (tm > 12) { tm = 1; ty++; }
-                }
-                if (dNum >= cDay) {
+                let tm = mNum;
+                let ty = y;
+                if (dNum > cDay) {
                     tm++;
                     if (tm > 12) { tm = 1; ty++; }
                 }
@@ -729,6 +730,21 @@
                 if (!card) return null;
                 const [y, m, d] = dateStr.split('-').map(Number);
                 return this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
+            },
+
+            // Recalcula a fatura de todas as compras de cartão já salvas, com a regra atual.
+            // Só mexe em compras ainda NÃO pagas, para não alterar o histórico.
+            recalcInvoices() {
+                let changed = false;
+                this.state.transactions.forEach(t => {
+                    if (!t.cardId || t.type === 'cc_payment' || t.isPaid) return;
+                    const card = this.state.cards.find(c => c.id === t.cardId);
+                    if (!card) return;
+                    const [y, m, d] = t.date.split('-').map(Number);
+                    const novo = this.getInvoiceMonth(y, m, d, card.closingDay, card.dueDay);
+                    if (novo !== t.invoiceMonth) { t.invoiceMonth = novo; changed = true; }
+                });
+                if (changed) this.saveData();
             },
 
             ensureCategory(name, icon, type) {
@@ -1550,6 +1566,7 @@
                 });
                 if (formValues && formValues.name && formValues.limit) {
                     card.name = formValues.name; card.limit = formValues.limit; card.closingDay = formValues.closingDay; card.dueDay = formValues.dueDay; card.color = formValues.color;
+                    this.recalcInvoices();
                     this.saveData(); this.renderCards();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Atualizado!', showConfirmButton: false, timer: 1500 });
                 }
