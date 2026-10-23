@@ -636,10 +636,64 @@
                 this.updateStatusIcon();
                 const initialTab = location.hash.replace('#', '') || 'dashboard'; this.switchTab(initialTab);
             },
-            
+
+            /* ---------- Utilitários ---------- */
+
             escapeHTML(str) {
                 if (typeof str !== 'string') return str;
                 return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag]));
+            },
+
+            // Serializa um valor para ser usado como argumento JS dentro de um atributo onclick="..."
+            jsArg(v) {
+                return this.escapeHTML(JSON.stringify(v));
+            },
+
+            // Data de hoje no fuso LOCAL do usuário (YYYY-MM-DD), sem usar toISOString (que é UTC)
+            todayISO() {
+                const d = new Date();
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            },
+
+            // Arredonda para centavos, evitando erros de ponto flutuante
+            round2(v) {
+                return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+            },
+
+            // Valor da parcela k (0-based) de um total dividido em n parcelas.
+            // A soma das parcelas é sempre exatamente o total (a diferença de centavos cai nas últimas parcelas).
+            instPart(total, n, k) {
+                return this.round2(this.round2(total * (k + 1) / n) - this.round2(total * k / n));
+            },
+
+            // Escapa um campo CSV (separador ';', aspas, quebras de linha)
+            csvCell(v) {
+                const s = String(v ?? '').replace(/[\r\n]+/g, ' ');
+                return /[;"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+            },
+
+            // Lê uma linha CSV respeitando campos entre aspas
+            parseCSVLine(line, sep = ';') {
+                const out = [];
+                let cur = '';
+                let inQ = false;
+                for (let i = 0; i < line.length; i++) {
+                    const ch = line[i];
+                    if (inQ) {
+                        if (ch === '"') {
+                            if (line[i + 1] === '"') { cur += '"'; i++; }
+                            else inQ = false;
+                        } else {
+                            cur += ch;
+                        }
+                    } else {
+                        if (ch === '"') inQ = true;
+                        else if (ch === sep) { out.push(cur); cur = ''; }
+                        else cur += ch;
+                    }
+                }
+                out.push(cur);
+                return out;
             },
 
             addDaysStr(str, n) {
@@ -681,6 +735,10 @@
                 let c = this.state.categories.find(x => x.name === name);
                 if (!c) { c = { id: this.generateId(), name, icon, type, budgetLimit: 0 }; this.state.categories.push(c); }
                 return c;
+            },
+
+            getDebtCategory() {
+                return this.ensureCategory('Recebimento de Dívida', '🤑', 'income');
             },
 
             isAdvance(t) {
@@ -768,22 +826,22 @@
             savePurchase(v, purchaseId = this.generateId()) {
                 const n = Math.max(1, Number(v.instCount) || 1);
                 const mult = (n > 1 && v.instMode === 'parcela') ? n : 1;
-                const total = Number(v.val) * mult;
+                const total = this.round2(Number(v.val) * mult);
                 const card = v.paymentMethod === 'credit' && v.cardId ? this.state.cards.find(c => c.id === v.cardId) : null;
 
                 const friends = v.isSplit ? v.friends.map(f => {
                     if (f.name && !this.state.friends.includes(f.name)) this.state.friends.push(f.name);
                     return {
                         name: f.name,
-                        total: Number(f.val) * mult,
+                        total: this.round2(Number(f.val) * mult),
                         paid: Number(f.paidCount) || 0,
                         debtId: f.debtId || this.generateId()
                     };
                 }) : [];
 
-                const myTotal = total - friends.reduce((s, f) => s + f.total, 0);
+                const myTotal = this.round2(total - friends.reduce((s, f) => s + f.total, 0));
                 const thirdCat = friends.length ? this.ensureCategory('Compra de Terceiros', '🤝', 'expense') : null;
-                const recCat = friends.some(f => f.paid > 0) ? this.ensureCategory('Recebimento de Dívida', '🤑', 'income') : null;
+                const recCat = friends.some(f => f.paid > 0) ? this.getDebtCategory() : null;
                 const group = n > 1 ? purchaseId : undefined;
                 const base = {
                     purchaseId,
@@ -796,7 +854,7 @@
                 };
 
                 friends.forEach(f => {
-                    const paidAmt = Math.min(f.paid, n) * (f.total / n);
+                    const paidAmt = this.round2(f.total * Math.min(f.paid, n) / n);
                     this.state.debts.push({
                         id: f.debtId, type: 'owes_me', title: `Divisão: ${v.desc} (${f.name})`,
                         totalAmount: f.total, paidAmount: paidAmt
@@ -819,7 +877,7 @@
                     const suffix = n > 1 ? ` (${k + 1}/${n})` : '';
                     const common = { ...base, date, invoiceMonth: inv, dueDate: due };
 
-                    const myAmt = myTotal / n;
+                    const myAmt = this.instPart(myTotal, n, k);
                     if (!v.isSplit || myAmt > 0.001) {
                         this.state.transactions.push({
                             ...common, id: this.generateId(),
@@ -834,7 +892,7 @@
                         this.state.transactions.push({
                             ...common, id: this.generateId(),
                             description: `${v.desc} (${f.name})${suffix}`,
-                            amount: f.total / n, categoryId: thirdCat.id,
+                            amount: this.instPart(f.total, n, k), categoryId: thirdCat.id,
                             isPaid: card ? false : fPaid, splitName: f.name, friendHasPaid: fPaid, debtId: f.debtId
                         });
                     });
@@ -842,22 +900,31 @@
                 return purchaseId;
             },
 
-            getCashBalance(monthKey) {
-                const validTx = this.state.transactions.filter(t => t.date.startsWith(monthKey));
+            // Fluxo de caixa do mês (ou de todos os meses se monthKey = '').
+            // Só conta transações JÁ PAGAS. Cofrinhos (appSavedAmount) são descontados do saldo.
+            getCashFlow(monthKey) {
                 const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                const cashIncome = validTx
-                    .filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null))
-                    .reduce((a, b) => a + Number(b.amount), 0);
-                const cashExpense = validTx
+                const debtCatId = debtCat ? debtCat.id : null;
+                const paidTx = this.state.transactions.filter(t => t.date.startsWith(monthKey) && t.isPaid);
+
+                const income = this.round2(paidTx
+                    .filter(t => t.type === 'income' && t.categoryId !== debtCatId)
+                    .reduce((a, b) => a + Number(b.amount), 0));
+
+                const expense = this.round2(paidTx
                     .filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment')
-                    .reduce((a, b) => a + Number(b.amount), 0);
-                return cashIncome - cashExpense;
+                    .reduce((a, b) => a + Number(b.amount), 0));
+
+                const reserved = this.round2((this.state.goals || [])
+                    .reduce((a, g) => a + Number(g.appSavedAmount || 0), 0));
+
+                return { income, expense, reserved, balance: this.round2(income - expense - reserved) };
             },
 
             updateStatusIcon() {
                 const filterEl = document.getElementById('dash-month-filter');
                 const monthKey = filterEl ? filterEl.value : '';
-                const balance = this.getCashBalance(monthKey);
+                const balance = this.getCashFlow(monthKey).balance;
                 const iconUrl = balance >= 0 ? '1.png' : '2.png';
 
                 const sidebarLogo = document.getElementById('sidebar-logo');
@@ -1164,14 +1231,9 @@
 
                 const filter = document.getElementById('dash-month-filter').value;
                 const validTx = this.state.transactions.filter(t => t.date.startsWith(filter));
-                
-                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                const cashIncome = validTx.filter(t => t.type === 'income' && t.categoryId !== (debtCat ? debtCat.id : null)).reduce((a,b) => a + Number(b.amount), 0);
-                const cashExpense = validTx.filter(t => (t.type === 'expense' && !t.cardId) || t.type === 'cc_payment').reduce((a,b) => a + Number(b.amount), 0);
-                
-                const balance = cashIncome - cashExpense;
 
-                document.getElementById('dash-balance').innerText = this.formatCurrency(balance);
+                const flow = this.getCashFlow(filter);
+                document.getElementById('dash-balance').innerText = this.formatCurrency(flow.balance);
                 
                 const monthTx = this.state.transactions.filter(t => t.date.startsWith(filter) && t.type !== 'cc_payment');
                 const monthIncome = monthTx.filter(t => t.type === 'income').reduce((a,b) => a + Number(b.amount), 0);
@@ -1237,30 +1299,41 @@
                     const monthKey = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, '0')}`;
                     const monthName = futureDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
                     
+                    // 1) Transações não pagas, separadas em: faturas de cartão, dívidas agendadas e demais (Pix/boleto)
                     const cardTotals = {};
+                    let pendingNoCard = 0;
                     let upcomingDebts = 0;
-                    
+
                     this.state.transactions.forEach(t => {
-                        if(t.cardId && t.type !== 'cc_payment' && t.invoiceMonth === monthKey && !t.isPaid) {
-                            cardTotals[t.cardId] = (cardTotals[t.cardId] || 0) + Number(t.amount);
+                        if (t.isPaid || t.type !== 'expense') return;
+                        const amt = Number(t.amount);
+                        if (t.cardId) {
+                            if (t.invoiceMonth === monthKey) cardTotals[t.cardId] = (cardTotals[t.cardId] || 0) + amt;
+                            return;
                         }
-                        if(t.debtId && t.type === 'expense' && !t.isPaid && t.date.startsWith(monthKey)) {
-                            upcomingDebts += Number(t.amount);
-                        }
+                        if (!t.date.startsWith(monthKey)) return;
+                        if (t.debtId) upcomingDebts += amt;
+                        else pendingNoCard += amt;
                     });
 
+                    // 2) Contas fixas: só entram se ainda NÃO foram lançadas neste mês (evita dupla contagem)
                     const fixedCosts = this.state.recurring.filter(r => r.type === 'expense').reduce((acc, r) => {
+                        const alreadyGenerated = this.state.transactions.some(t => t.recurringId === r.id && t.date.startsWith(monthKey));
+                        const processedButDeleted = r.lastProcessedMonth && (r.lastProcessedMonth >= monthKey) && !alreadyGenerated;
+                        if (alreadyGenerated || processedButDeleted) return acc;
                         const amt = r.isSplit && r.myVal !== undefined ? r.myVal : r.amount;
                         return acc + Number(amt);
                     }, 0);
-                    
+
                     const ccTotal = Object.values(cardTotals).reduce((a,b) => a+b, 0);
                     
                     let ccHtml = '';
                     Object.keys(cardTotals).forEach(cid => {
                         const card = this.state.cards.find(c => c.id === cid);
-                        if(card) ccHtml += `<div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700"><span class="text-slate-500">${card.name}</span> <span class="font-bold text-rose-500">${this.formatCurrency(cardTotals[cid])}</span></div>`;
+                        if(card) ccHtml += `<div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700"><span class="text-slate-500">${this.escapeHTML(card.name)}</span> <span class="font-bold text-rose-500">${this.formatCurrency(cardTotals[cid])}</span></div>`;
                     });
+
+                    const total = this.round2(ccTotal + pendingNoCard + fixedCosts + upcomingDebts);
 
                     container.innerHTML += `
                         <div class="card p-5">
@@ -1270,7 +1343,11 @@
                                 ${ccHtml || '<p class="text-sm text-emerald-500 font-bold mt-1">Nenhuma fatura pendente</p>'}
                             </div>
                             <div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700">
-                                <span class="text-slate-500 font-bold">Despesas Fixas (Sua parte)</span>
+                                <span class="text-slate-500 font-bold">Pix / Boleto Pendentes</span>
+                                <span class="font-bold text-rose-500">${this.formatCurrency(pendingNoCard)}</span>
+                            </div>
+                            <div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700">
+                                <span class="text-slate-500 font-bold">Contas Fixas a Lançar (Sua parte)</span>
                                 <span class="font-bold text-rose-500">${this.formatCurrency(fixedCosts)}</span>
                             </div>
                             <div class="flex justify-between text-sm py-1 border-b border-slate-100 dark:border-slate-700">
@@ -1279,7 +1356,7 @@
                             </div>
                             <div class="mt-4 flex justify-between bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
                                 <span class="font-black text-slate-800 dark:text-slate-100">Custo Total Previsto</span>
-                                <span class="font-black text-rose-500">${this.formatCurrency(ccTotal + fixedCosts + upcomingDebts)}</span>
+                                <span class="font-black text-rose-500">${this.formatCurrency(total)}</span>
                             </div>
                         </div>
                     `;
@@ -1344,7 +1421,7 @@
                             return acc + Number(amt);
                         }, 0);
 
-                    data.push(txSum + recSum);
+                    data.push(this.round2(txSum + recSum));
                 }
 
                 const rangeEl = document.getElementById('forecast-range');
@@ -1460,7 +1537,7 @@
             async payInvoice(cardId, invoiceMonth) {
                 const card = this.state.cards.find(c => c.id === cardId);
                 const cardTxs = this.state.transactions.filter(t => t.cardId === cardId && t.invoiceMonth === invoiceMonth && !t.isPaid);
-                const total = cardTxs.reduce((a,b) => a + Number(b.amount), 0);
+                const total = this.round2(cardTxs.reduce((a,b) => a + Number(b.amount), 0));
 
                 const { value: amount } = await Swal.fire({
                     title: `Pagar Fatura`,
@@ -1468,7 +1545,7 @@
                         <p class="text-slate-700 dark:text-slate-200 mb-4 text-sm">Fatura de <b>${invoiceMonth.split('-').reverse().join('/')}</b><br>Total aberto: <b class="text-rose-500">${this.formatCurrency(total)}</b></p>
                         <div class="text-left px-4">
                             <label class="block text-xs font-bold text-slate-500 mb-1">Valor do Pagamento (R$):</label>
-                            <input id="swal-inv-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${total}">
+                            <input id="swal-inv-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${total.toFixed(2)}">
                             <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Dica: Se pagar menos que o total, o restante será jogado para a próxima fatura.</p>
                         </div>
                     `,
@@ -1481,15 +1558,16 @@
                 });
 
                 if (amount) {
-                    if (amount > total) { Swal.fire('Erro', 'Você não pode pagar mais do que o valor da fatura.', 'error'); return; }
+                    if (amount > total + 0.01) { Swal.fire('Erro', 'Você não pode pagar mais do que o valor da fatura.', 'error'); return; }
 
                     const paymentId = this.generateId();
+                    const today = this.todayISO();
 
                     this.state.transactions.push({
                         id: paymentId,
-                        description: `Pagamento Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})${amount < total ? ' - Parcial' : ''}`,
-                        amount: amount,
-                        date: new Date().toISOString().split('T')[0],
+                        description: `Pagamento Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})${amount < total - 0.01 ? ' - Parcial' : ''}`,
+                        amount: this.round2(amount),
+                        date: today,
                         type: 'cc_payment',
                         paidCardId: cardId,
                         paidInvoiceMonth: invoiceMonth,
@@ -1498,25 +1576,21 @@
 
                     cardTxs.forEach(t => t.isPaid = true);
 
-                    if (amount < total) {
-                        const remaining = total - amount;
+                    if (amount < total - 0.01) {
+                        const remaining = this.round2(total - amount);
                         let [y, m] = invoiceMonth.split('-');
                         let nm = parseInt(m) + 1; let ny = parseInt(y);
                         if (nm > 12) { nm = 1; ny++; }
                         const nextInvoiceMonth = `${ny}-${String(nm).padStart(2, '0')}`;
                         
-                        let cat = this.state.categories.find(c => c.name === 'Restante de Fatura');
-                        if(!cat) {
-                            cat = { id: this.generateId(), name: 'Restante de Fatura', icon: '💳', type: 'expense', budgetLimit: 0 };
-                            this.state.categories.push(cat);
-                        }
+                        const cat = this.ensureCategory('Restante de Fatura', '💳', 'expense');
 
                         this.state.transactions.push({
                             id: this.generateId(),
                             parentPaymentId: paymentId, 
                             description: `Restante Fatura ${card.name} (${invoiceMonth.split('-').reverse().join('/')})`,
                             amount: remaining,
-                            date: new Date().toISOString().split('T')[0],
+                            date: today,
                             type: 'expense',
                             categoryId: cat.id,
                             isPaid: false,
@@ -1525,34 +1599,10 @@
                         });
                     }
 
-                    // NOVO: marca como pagas as parcelas dos amigos desta fatura
-                    const friendTxs = cardTxs.filter(t => t.splitName && !t.friendHasPaid);
-                    if (friendTxs.length) {
-                        let rCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                        if (!rCat) {
-                            rCat = { id: this.generateId(), name: 'Recebimento de Dívida', icon: '🤑', type: 'income', budgetLimit: 0 };
-                            this.state.categories.push(rCat);
-                        }
-                        const today = new Date().toISOString().split('T')[0];
-                        friendTxs.forEach(tx => {
-                            tx.friendHasPaid = true;
-                            tx.paidByPaymentId = paymentId;
-                            const debt = tx.debtId ? this.state.debts.find(d => d.id === tx.debtId) : null;
-                            if (debt) debt.paidAmount += tx.amount;
-                            const instMatch = tx.description.match(/(\(\d+\/\d+\))/);
-                            this.state.transactions.push({
-                                id: this.generateId(),
-                                debtId: tx.debtId,
-                                friendPaymentOf: paymentId,
-                                description: `Pagamento: Divisão c/ ${tx.splitName}${instMatch ? ' ' + instMatch[1] : ''}`,
-                                amount: tx.amount,
-                                date: today,
-                                type: 'income',
-                                categoryId: rCat.id,
-                                isPaid: true
-                            });
-                        });
-                    }
+                    // Marca como pagas as parcelas dos amigos desta fatura (gera a receita correspondente)
+                    cardTxs.filter(t => t.splitName && !t.friendHasPaid).forEach(tx => {
+                        this.registerFriendPayment(tx, today, paymentId);
+                    });
 
                     this.saveData(); this.renderCards();
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
@@ -1577,7 +1627,7 @@
                 }).join('');
                 
                 Swal.fire({
-                    title: `Fatura ${card.name}`,
+                    title: `Fatura ${this.escapeHTML(card.name)}`,
                     html: `<div class="max-h-72 overflow-y-auto mt-2 text-slate-700 dark:text-slate-200">${listHtml}</div>`,
                     showConfirmButton: true,
                     confirmButtonText: 'Fechar',
@@ -1677,6 +1727,49 @@
                 });
             },
 
+            // Registra o pagamento de uma parcela de amigo: marca como paga, abate a dívida e cria a receita
+            // ligada à parcela (paidByTxId) para que possa ser removida depois.
+            registerFriendPayment(tx, date, paymentId = null) {
+                tx.friendHasPaid = true;
+                if (paymentId) tx.paidByPaymentId = paymentId;
+
+                if (tx.debtId) {
+                    const debt = this.state.debts.find(d => d.id === tx.debtId);
+                    if (debt) debt.paidAmount = this.round2(debt.paidAmount + tx.amount);
+                }
+
+                const instMatch = tx.description.match(/(\(\d+\/\d+\))/);
+                const instStr = instMatch ? ' ' + instMatch[1] : '';
+                const rCat = this.getDebtCategory();
+
+                const incomeTx = {
+                    id: this.generateId(),
+                    paidByTxId: tx.id,
+                    debtId: tx.debtId,
+                    description: `Pagamento: Divisão c/ ${tx.splitName}${instStr}`,
+                    amount: tx.amount,
+                    date,
+                    type: 'income',
+                    categoryId: rCat.id,
+                    isPaid: true
+                };
+                if (paymentId) incomeTx.friendPaymentOf = paymentId;
+                this.state.transactions.push(incomeTx);
+            },
+
+            // Desfaz o pagamento de uma parcela de amigo: remove a receita gerada e reverte a dívida
+            undoFriendPayment(tx) {
+                tx.friendHasPaid = false;
+                tx.paidByPaymentId = null;
+
+                if (tx.debtId) {
+                    const debt = this.state.debts.find(d => d.id === tx.debtId);
+                    if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - tx.amount));
+                }
+
+                this.state.transactions = this.state.transactions.filter(t => t.paidByTxId !== tx.id);
+            },
+
             async toggleFriendPaid(txId) {
                 const tx = this.state.transactions.find(t => t.id === txId);
                 if(!tx) return;
@@ -1684,45 +1777,15 @@
                 if (tx.friendHasPaid) {
                     const res = await Swal.fire({title: 'Desfazer', text: 'Marcar que esta parcela não foi paga ainda?', showCancelButton: true, confirmButtonText: 'Sim, desfazer', cancelButtonText: 'Cancelar'});
                     if(res.isConfirmed) {
-                        tx.friendHasPaid = false;
-                        if(tx.debtId) {
-                            const debt = this.state.debts.find(d => d.id === tx.debtId);
-                            if (debt) debt.paidAmount -= tx.amount;
-                        }
+                        this.undoFriendPayment(tx);
                         this.saveData(); this.renderFriends();
+                        if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Desfeito', showConfirmButton: false, timer: 1500});
                     }
                 } else {
                     const res = await Swal.fire({title: 'Confirmar Pagamento', text: 'Tem certeza que seu amigo te pagou o valor desta parcela?', showCancelButton: true, confirmButtonText: 'Sim, pagou', cancelButtonText: 'Cancelar', customClass: {confirmButton: 'swal2-confirm !bg-emerald-500'}});
                     if(res.isConfirmed) {
-                        tx.friendHasPaid = true;
-                        if(tx.debtId) {
-                            const debt = this.state.debts.find(d => d.id === tx.debtId);
-                            if(debt) debt.paidAmount += tx.amount;
-                        }
-                        
-                        let rCatName = 'Recebimento de Dívida';
-                        let rCat = this.state.categories.find(c => c.name === rCatName);
-                        if(!rCat) {
-                            rCat = { id: this.generateId(), name: rCatName, icon: '🤑', type: 'income', budgetLimit: 0 };
-                            this.state.categories.push(rCat);
-                        }
-                        
-                        let desc = tx.description;
-                        let instMatch = desc.match(/(\(\d+\/\d+\))/);
-                        let instStr = instMatch ? ' ' + instMatch[1] : '';
-                        
-                        this.state.transactions.push({
-                            id: this.generateId(),
-                            debtId: tx.debtId,
-                            description: `Pagamento: Divisão c/ ${tx.splitName}${instStr}`,
-                            amount: tx.amount,
-                            date: new Date().toISOString().split('T')[0],
-                            type: 'income',
-                            categoryId: rCat.id,
-                            isPaid: true
-                        });
-                        
+                        this.registerFriendPayment(tx, this.todayISO());
                         this.saveData(); this.renderFriends(); 
                         if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marcado como Pago!', showConfirmButton: false, timer: 1500});
@@ -1742,7 +1805,7 @@
                     Swal.fire('Ops!', 'Não há parcelas pendentes neste mês.', 'info');
                     return;
                 }
-                const total = txs.reduce((s, t) => s + Number(t.amount), 0);
+                const total = this.round2(txs.reduce((s, t) => s + Number(t.amount), 0));
                 const res = await Swal.fire({
                     title: 'Confirmar Pagamento do Mês',
                     html: `Marcar todas as <b>${txs.length}</b> parcelas pendentes de <b>${this.escapeHTML(name)}</b> em <b>${monthKey.split('-').reverse().join('/')}</b> como pagas?<br><br>Total: <b class="text-emerald-500">${this.formatCurrency(total)}</b>`,
@@ -1754,31 +1817,8 @@
                 });
                 if (!res.isConfirmed) return;
 
-                let rCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                if (!rCat) {
-                    rCat = { id: this.generateId(), name: 'Recebimento de Dívida', icon: '🤑', type: 'income', budgetLimit: 0 };
-                    this.state.categories.push(rCat);
-                }
-
-                txs.forEach(tx => {
-                    tx.friendHasPaid = true;
-                    if (tx.debtId) {
-                        const debt = this.state.debts.find(d => d.id === tx.debtId);
-                        if (debt) debt.paidAmount += tx.amount;
-                    }
-                    let instMatch = tx.description.match(/(\(\d+\/\d+\))/);
-                    let instStr = instMatch ? ' ' + instMatch[1] : '';
-                    this.state.transactions.push({
-                        id: this.generateId(),
-                        debtId: tx.debtId,
-                        description: `Pagamento: Divisão c/ ${tx.splitName}${instStr}`,
-                        amount: tx.amount,
-                        date: new Date().toISOString().split('T')[0],
-                        type: 'income',
-                        categoryId: rCat.id,
-                        isPaid: true
-                    });
-                });
+                const today = this.todayISO();
+                txs.forEach(tx => this.registerFriendPayment(tx, today));
 
                 this.saveData();
                 this.renderFriends();
@@ -1872,7 +1912,7 @@
                 // Total geral para mini gráfico de proporção
                 const grandTotalPending = friendNames.reduce((s, n) => s + friendsMap[n].totalPending, 0);
 
-                friendNames.forEach(name => {
+                friendNames.forEach((name, fi) => {
                     const data = friendsMap[name];
                     
                     const monthKeys = Object.keys(data.byMonth).sort((a, b) => {
@@ -1897,7 +1937,7 @@
                         nextInvoiceKey = withPending || monthKeys[0];
                     }
 
-                    // Classifica meses em: destaque (mês atual/próximo ou com pendência recente) vs colapsados (passados distantes + futuros distantes)
+                    // Classifica meses em: destaque vs colapsados
                     const visibleMonthKeys = [];
                     const collapsedMonthKeys = [];
                     monthKeys.forEach(k => {
@@ -1906,7 +1946,6 @@
                         const isNext = k === nextInvoiceKey;
                         const hasPending = md.totalPending > 0;
                         const isCurrentOrFuture = v >= todayValue;
-                        // Mostra: mês da próxima fatura, qualquer mês futuro com pendência nos próximos 2 meses, e mês atual
                         if (isNext) { visibleMonthKeys.push(k); return; }
                         if (isCurrentOrFuture && hasPending && (v - todayValue) <= 2) { visibleMonthKeys.push(k); return; }
                         if (!isCurrentOrFuture && hasPending && (todayValue - v) <= 1) { visibleMonthKeys.push(k); return; }
@@ -1998,12 +2037,13 @@
                         }).join('');
 
                         const monthPending = monthData.totalPending;
-                        const monthCollapseId = `friend-month-${name.replace(/\s/g, '')}-${monthKey}`;
+                        // IDs baseados em índice (seguros para qualquer caractere no nome)
+                        const monthCollapseId = `friend-month-${fi}-${monthKey}`;
                         const isExpanded = forceOpen || isNextInvoice;
 
                         let payAllBtn = '';
                         if (hasPending) {
-                            payAllBtn = `<button onclick="event.stopPropagation(); app.markMonthAsPaid('${this.escapeHTML(name).replace(/'/g, "&#39;")}', '${monthKey}')" class="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 px-2 py-1 rounded-full whitespace-nowrap transition-colors" title="Marcar tudo como pago"><i class="ph ph-check-square"></i> Pagar Tudo</button>`;
+                            payAllBtn = `<button onclick="event.stopPropagation(); app.markMonthAsPaid(${this.jsArg(name)}, '${monthKey}')" class="text-[9px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border border-emerald-200 dark:border-emerald-800 px-2 py-1 rounded-full whitespace-nowrap transition-colors" title="Marcar tudo como pago"><i class="ph ph-check-square"></i> Pagar Tudo</button>`;
                         }
 
                         return `
@@ -2029,7 +2069,7 @@
                     let monthsHtml = visibleMonthKeys.map(k => renderMonth(k)).join('');
 
                     if (collapsedMonthKeys.length > 0) {
-                        const collapseId = `friend-collapsed-${name.replace(/\s/g, '')}`;
+                        const collapseId = `friend-collapsed-${fi}`;
                         const pastCount = collapsedMonthKeys.filter(k => monthKeyToSortValue(k) < todayValue).length;
                         const futureCount = collapsedMonthKeys.filter(k => monthKeyToSortValue(k) >= todayValue).length;
                         const labelParts = [];
@@ -2082,8 +2122,8 @@
 
             async newTransaction() {
                 const catOpts = (type) => this.state.categories.filter(c => c.type === type || c.type === 'both').map(c => `<option value="${c.id}">${c.icon} ${this.escapeHTML(c.name)}</option>`).join('');
-                const cardOpts = this.state.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-                const today = new Date().toISOString().split('T')[0];
+                const cardOpts = this.state.cards.map(c => `<option value="${c.id}">${this.escapeHTML(c.name)}</option>`).join('');
+                const today = this.todayISO();
                 const { value: formValues } = await Swal.fire({
                     title: 'Nova Transação',
                     html: `
@@ -2226,7 +2266,7 @@
                 const method = ref.cardId ? 'credit' : (ref.paymentMethod === 'boleto' ? 'boleto' : 'pix');
                 const firstDate = txs.filter(t => !this.isAdvance(t)).map(t => t.date).sort()[0] || tx.date;
                 const firstDue = txs.map(t => t.dueDate).filter(Boolean).sort()[0] || '';
-                const total = [...ownTxs, ...friendTxs].reduce((s, t) => s + Number(t.amount), 0);
+                const total = this.round2([...ownTxs, ...friendTxs].reduce((s, t) => s + Number(t.amount), 0));
                 const desc = this.baseDescOf(tx);
                 const isPaidInit = ownTxs[0] ? !!ownTxs[0].isPaid : true;
 
@@ -2316,7 +2356,9 @@
                 if (formValues) {
                     const purchaseId = tx.purchaseId || tx.installmentGroupId || this.generateId();
 
-                    this.state.transactions = this.state.transactions.filter(t => !oldIds.includes(t.id));
+                    // Ao editar, remove também as receitas ligadas às parcelas antigas (paidByTxId) para não duplicar
+                    const removedIds = new Set(oldIds);
+                    this.state.transactions = this.state.transactions.filter(t => !oldIds.includes(t.id) && !(t.paidByTxId && removedIds.has(t.paidByTxId)));
                     this.state.debts = this.state.debts.filter(d => !oldDebtIds.includes(d.id));
 
                     formValues.friends.forEach(f => {
@@ -2416,11 +2458,10 @@
                         
                         if (isPayment) {
                             if (tx.isPaid) {
-                                debt.paidAmount -= tx.amount;
-                                if (debt.paidAmount < 0) debt.paidAmount = 0;
+                                debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - tx.amount));
                             }
                         } else {
-                            debt.totalAmount -= tx.amount;
+                            debt.totalAmount = this.round2(debt.totalAmount - tx.amount);
                             if (debt.totalAmount <= 0.01) {
                                 this.state.debts = this.state.debts.filter(d => d.id !== tx.debtId);
                                 this.state.transactions = this.state.transactions.filter(t => t.debtId !== tx.debtId && t.id !== id);
@@ -2433,18 +2474,19 @@
                     const related = this.state.transactions.filter(t => t.cardId === tx.paidCardId && t.invoiceMonth === tx.paidInvoiceMonth);
                     related.forEach(t => t.isPaid = false);
 
-                    // NOVO: desfaz a baixa dos amigos desta fatura
+                    // Desfaz a baixa dos amigos desta fatura
                     this.state.transactions.filter(t => t.paidByPaymentId === id).forEach(t => {
                         t.friendHasPaid = false;
                         t.paidByPaymentId = null;
                         const debt = t.debtId ? this.state.debts.find(d => d.id === t.debtId) : null;
-                        if (debt) debt.paidAmount = Math.max(0, debt.paidAmount - t.amount);
+                        if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount - t.amount));
                     });
 
                     this.state.transactions = this.state.transactions.filter(t => t.parentPaymentId !== id && t.friendPaymentOf !== id);
                 }
 
-                this.state.transactions = this.state.transactions.filter(t => t.id !== id); 
+                // Remove também a receita ligada a uma parcela de amigo, se existir
+                this.state.transactions = this.state.transactions.filter(t => t.id !== id && t.paidByTxId !== id); 
                 
                 if (shouldRender) {
                     this.saveData(); 
@@ -2652,6 +2694,8 @@
 
                 let finalHtml = '';
                 let renderedInstGroups = new Set();
+                // Slug seguro para IDs de DOM (sem apóstrofos, espaços ou caracteres especiais)
+                const slug = (s) => encodeURIComponent(s).replace(/[^A-Za-z0-9]/g, '_');
 
                 reallyFinalList.forEach(item => {
                     if (item.isGroup) {
@@ -2712,7 +2756,7 @@
 
                         finalHtml += `
                             <div class="w-full flex flex-col bg-white dark:bg-slate-800 border-b border-slate-100/50 dark:border-slate-700/30">
-                                <div onclick="document.getElementById('name-group-${item.key.replace(/\s/g, '')}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors cursor-pointer w-full group gap-2">
+                                <div onclick="document.getElementById('name-group-${slug(item.key)}').classList.toggle('hidden'); this.querySelector('.ph-caret-down').classList.toggle('rotate-180')" class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-colors cursor-pointer w-full group gap-2">
                                     <div class="flex items-start sm:items-center gap-2 sm:gap-3 flex-1 min-w-0 w-full">
                                         <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-base sm:text-lg flex-shrink-0 text-white shadow-sm bg-indigo-400">
                                             <i class="ph ph-stack"></i>
@@ -2730,7 +2774,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div id="name-group-${item.key.replace(/\s/g, '')}" class="${search ? 'flex' : 'hidden'} flex-col w-full border-t border-slate-100/50 dark:border-slate-700/30">
+                                <div id="name-group-${slug(item.key)}" class="${search ? 'flex' : 'hidden'} flex-col w-full border-t border-slate-100/50 dark:border-slate-700/30">
                                     ${txsHtml}
                                 </div>
                             </div>
@@ -2771,7 +2815,7 @@
                 const isDebtPay = tx.debtId && cat && (cat.name === 'Recebimento de Dívida' || cat.name === 'Pagamento de Dívida');
                 if (isDebtPay) {
                     const debt = this.state.debts.find(d => d.id === tx.debtId);
-                    if (debt) debt.paidAmount = Math.max(0, debt.paidAmount + (tx.isPaid ? tx.amount : -tx.amount));
+                    if (debt) debt.paidAmount = Math.max(0, this.round2(debt.paidAmount + (tx.isPaid ? tx.amount : -tx.amount)));
                     if (tx.isPaid) {
                         tx.description = tx.description.replace('[Agendado] ', '');
                     } else if (!tx.description.includes('[Agendado]')) {
@@ -2812,11 +2856,11 @@
                     const existingOpposite = this.state.debts.find(d => 
                         d.type === oppositeType && 
                         d.title.toLowerCase().trim() === searchTitle && 
-                        (d.totalAmount - d.paidAmount) > 0
+                        this.round2(d.totalAmount - d.paidAmount) > 0
                     );
 
                     if (existingOpposite) {
-                        const oppRemaining = existingOpposite.totalAmount - existingOpposite.paidAmount;
+                        const oppRemaining = this.round2(existingOpposite.totalAmount - existingOpposite.paidAmount);
                         const actionText = formValues.type === 'i_owe' ? 'a pagar' : 'a receber';
                         
                         const res = await Swal.fire({
@@ -2829,19 +2873,20 @@
                         });
 
                         if (res.isConfirmed) {
-                            if (formValues.totalAmount === oppRemaining) {
+                            const diff = this.round2(formValues.totalAmount - oppRemaining);
+                            if (Math.abs(diff) < 0.005) {
                                 existingOpposite.paidAmount = existingOpposite.totalAmount;
                                 Swal.fire('Quitadas!', 'Os valores se anularam.', 'success');
-                            } else if (formValues.totalAmount > oppRemaining) {
+                            } else if (diff > 0) {
                                 existingOpposite.paidAmount = existingOpposite.totalAmount;
-                                formValues.totalAmount -= oppRemaining;
+                                formValues.totalAmount = diff;
                                 this.state.debts.push({ 
                                     id: this.generateId(), type: formValues.type, title: formValues.title, totalAmount: formValues.totalAmount, paidAmount: 0 
                                 });
                                 Swal.fire('Abatido!', `A dívida antiga zerou e a nova ficou em ${this.formatCurrency(formValues.totalAmount)}.`, 'success');
                             } else {
-                                existingOpposite.paidAmount += formValues.totalAmount;
-                                Swal.fire('Abatido!', `O valor diminuiu a dívida antiga, restando ${this.formatCurrency(existingOpposite.totalAmount - existingOpposite.paidAmount)}.`, 'success');
+                                existingOpposite.paidAmount = this.round2(existingOpposite.paidAmount + formValues.totalAmount);
+                                Swal.fire('Abatido!', `O valor diminuiu a dívida antiga, restando ${this.formatCurrency(this.round2(existingOpposite.totalAmount - existingOpposite.paidAmount))}.`, 'success');
                             }
                             this.saveData(); this.renderDebts();
                             return;
@@ -2861,8 +2906,8 @@
             
             async payDebt(id) {
                 const debt = this.state.debts.find(d => d.id === id); 
-                const remaining = debt.totalAmount - debt.paidAmount;
-                const today = new Date().toISOString().split('T')[0];
+                const remaining = this.round2(debt.totalAmount - debt.paidAmount);
+                const today = this.todayISO();
                 
                 const { value: rows } = await Swal.fire({ 
                     title: debt.type === 'owes_me' ? 'Receber / Agendar' : 'Amortizar / Agendar', 
@@ -2879,13 +2924,13 @@
                     preConfirm: () => {
                         const rows = [...document.querySelectorAll('.pay-row')].map(r => ({
                             date: r.querySelector('.pay-date').value,
-                            val: Number(r.querySelector('.pay-val').value),
+                            val: this.round2(Number(r.querySelector('.pay-val').value)),
                             paid: r.querySelector('.pay-paid').checked
                         }));
                         if (rows.length === 0) { Swal.showValidationMessage('Adicione pelo menos um pagamento!'); return false; }
                         if (rows.some(r => !r.date || !r.val || r.val <= 0)) { Swal.showValidationMessage('Preencha data e valor de todos os pagamentos!'); return false; }
-                        const sum = rows.reduce((a, r) => a + r.val, 0);
-                        if (sum > remaining + 0.001) { Swal.showValidationMessage('A soma dos pagamentos excede a dívida!'); return false; }
+                        const sum = this.round2(rows.reduce((a, r) => a + r.val, 0));
+                        if (sum > remaining + 0.01) { Swal.showValidationMessage('A soma dos pagamentos excede a dívida!'); return false; }
                         return rows;
                     } 
                 });
@@ -2902,7 +2947,7 @@
                     }
 
                     rows.forEach(r => {
-                        if (r.paid) debt.paidAmount += r.val;
+                        if (r.paid) debt.paidAmount = this.round2(debt.paidAmount + r.val);
                         this.state.transactions.push({ 
                             id: this.generateId(), 
                             debtId: debt.id,
@@ -2982,7 +3027,8 @@
                 }).then((res) => { 
                     if(res.isConfirmed){ 
                         this.state.debts = this.state.debts.filter(d => d.id !== id); 
-                        this.state.transactions = this.state.transactions.filter(t => t.debtId !== id);
+                        const removedIds = new Set(this.state.transactions.filter(t => t.debtId === id).map(t => t.id));
+                        this.state.transactions = this.state.transactions.filter(t => t.debtId !== id && !(t.paidByTxId && removedIds.has(t.paidByTxId)));
 
                         this.saveData(); 
                         this.renderDebts(); 
@@ -3000,7 +3046,9 @@
                 const m = (document.getElementById('debts-month-filter') || {}).value || '';
                 if (this.state.debts.length === 0) { container.innerHTML = '<div class="p-6 text-center text-slate-500 font-bold text-sm border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-3xl w-full">Nenhuma dívida. 🎉</div>'; this.updateStatusIcon(); return; }
                 this.state.debts.forEach(d => {
-                    const remaining = d.totalAmount - d.paidAmount; const pct = Math.min(100, (Math.max(0, d.paidAmount) / Math.max(1, d.totalAmount)) * 100); const isPaid = remaining <= 0;
+                    const remaining = this.round2(d.totalAmount - d.paidAmount);
+                    const pct = Math.min(100, (Math.max(0, d.paidAmount) / Math.max(1, d.totalAmount)) * 100);
+                    const isPaid = remaining <= 0.01;
                     const isOwesMe = d.type === 'owes_me';
                     
                     let badge = '';
@@ -3029,7 +3077,7 @@
                             <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 p-0.5"><div class="${isOwesMe ? 'bg-emerald-500' : 'bg-indigo-500'} h-2 rounded-full" style="width: ${pct}%"></div></div>
                             <div class="flex justify-between text-xs w-full mt-1">
                                 <div class="flex flex-col min-w-0"><span class="text-slate-500 font-bold">Total</span><span class="font-bold text-slate-800 dark:text-slate-200 truncate">${this.formatCurrency(d.totalAmount)}</span></div>
-                                <div class="flex flex-col text-right min-w-0"><span class="${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} font-bold">Falta</span><span class="font-black ${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} truncate">${this.formatCurrency(remaining)}</span></div>
+                                <div class="flex flex-col text-right min-w-0"><span class="${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} font-bold">Falta</span><span class="font-black ${isOwesMe ? 'text-emerald-500' : 'text-rose-500'} truncate">${this.formatCurrency(Math.max(0, remaining))}</span></div>
                             </div>
                             ${schedHtml}
                             <div class="flex gap-2 mt-2 w-full">
@@ -3077,8 +3125,8 @@
                 const goal = this.state.goals.find(g => g.id === id);
                 const { value: amount } = await Swal.fire({ title: `Guardar`, html: `<p class="font-bold text-slate-700 dark:text-white truncate mb-2">${this.escapeHTML(goal.title)}</p>`, input: 'number', inputPlaceholder: 'Valor a guardar', showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar', inputValidator: (val) => { if (!val || val <= 0) return 'Insira um valor!'; } });
                 if (amount) { 
-                    goal.savedAmount += Number(amount); 
-                    goal.appSavedAmount = (goal.appSavedAmount || 0) + Number(amount); 
+                    goal.savedAmount = this.round2(goal.savedAmount + Number(amount)); 
+                    goal.appSavedAmount = this.round2((goal.appSavedAmount || 0) + Number(amount)); 
                     this.saveData(); this.renderGoals(); 
                     if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                     Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Guardado!', showConfirmButton: false, timer: 1500 }); 
@@ -3176,8 +3224,8 @@
                 const { value: formValues } = await Swal.fire({ 
                     title: 'Editar Categoria', 
                     html: `
-                        <input id="c-name" class="swal2-input" value="${cat.name}">
-                        <input id="c-icon" class="swal2-input" value="${cat.icon}" oninput="if([...this.value].length > 1) this.value = [...this.value][0]">
+                        <input id="c-name" class="swal2-input" value="${this.escapeHTML(cat.name)}">
+                        <input id="c-icon" class="swal2-input" value="${this.escapeHTML(cat.icon)}" oninput="if([...this.value].length > 1) this.value = [...this.value][0]">
                         <select id="c-type" class="swal2-select font-bold">
                             <option value="expense" ${cat.type === 'expense' ? 'selected' : ''}>Despesa</option>
                             <option value="income" ${cat.type === 'income' ? 'selected' : ''}>Receita</option>
@@ -3220,7 +3268,7 @@
                 this.state.categories.forEach(c => {
                     container.innerHTML += `
                         <div class="flex items-center justify-between p-3.5 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm w-full gap-2">
-                            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${c.icon}</div>
+                            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${this.escapeHTML(c.icon)}</div>
                             <div class="flex flex-col flex-1 min-w-0 pr-1">
                                 <span class="font-black text-slate-800 dark:text-slate-100 text-sm truncate w-full block">${this.escapeHTML(c.name)}</span>
                                 ${c.budgetLimit > 0 ? `<span class="text-[9px] text-slate-500 font-bold bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-full uppercase mt-0.5 truncate w-max max-w-full block">Teto: ${this.formatCurrency(c.budgetLimit)}</span>` : ''}
@@ -3258,7 +3306,7 @@
                     
                     container.innerHTML += `
                         <div class="flex items-center justify-between p-4 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-800/80 transition-colors gap-3 w-full">
-                            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? cat.icon : '🔄'}</div>
+                            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center text-lg flex-shrink-0">${cat ? this.escapeHTML(cat.icon) : '🔄'}</div>
                             <div class="flex flex-col flex-1 min-w-0 pr-1">
                                 <div class="flex items-center gap-2">
                                     <span class="font-bold text-slate-800 dark:text-slate-100 text-sm md:text-base truncate block">${this.escapeHTML(r.description)}</span>
@@ -3345,7 +3393,7 @@
                                 if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                             });
                             let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
-                            myVal = totalVal - friendsTotal;
+                            myVal = this.round2(totalVal - friendsTotal);
                             
                             if (friends.length === 0) { Swal.showValidationMessage('Adicione amigos na divisão!'); return false; }
                             if (myVal < -0.01) { Swal.showValidationMessage('A soma dos amigos excede o total!'); return false; }
@@ -3452,7 +3500,7 @@
                                 if (fName && !app.state.friends.includes(fName)) app.state.friends.push(fName);
                             });
                             let friendsTotal = friends.reduce((sum, f) => sum + f.val, 0);
-                            myVal = totalVal - friendsTotal;
+                            myVal = this.round2(totalVal - friendsTotal);
                             
                             if (friends.length === 0) { Swal.showValidationMessage('Adicione amigos na divisão!'); return false; }
                             if (myVal < -0.01) { Swal.showValidationMessage('A soma dos amigos excede o total!'); return false; }
@@ -3576,71 +3624,44 @@
                 e.target.value = ''; 
             },
 
+            // Exporta uma tabela plana: 1 cabeçalho + 1 linha por transação.
+            // Sem seções, subtotais ou totais, para que a planilha possa ser reimportada sem erros.
             exportCSV() { 
-                let csv = 'Data;Status;Tipo;Categoria;Cartão/Fatura;Descrição;Valor\n'; 
-                
-                const grouped = {};
-                this.state.transactions.forEach(t => {
+                const header = ['Data', 'Status', 'Tipo', 'Categoria', 'Cartão/Fatura', 'Descrição', 'Valor'];
+                const sorted = [...this.state.transactions].sort((a, b) => a.date.localeCompare(b.date));
+
+                const rows = sorted.map(t => {
                     const catName = this.state.categories.find(c => c.id === t.categoryId)?.name || 'Outros';
-                    if(!grouped[catName]) grouped[catName] = [];
-                    grouped[catName].push(t);
-                });
+                    const [y, m, d] = t.date.split('-');
+                    const dataForm = `${d}/${m}/${y}`;
+                    const status = t.isPaid ? 'Pago' : 'Pendente';
 
-                let totalReceitas = 0;
-                let totalDespesas = 0;
+                    let tipo = 'Despesa';
+                    if (t.type === 'income') tipo = 'Receita';
+                    if (t.type === 'cc_payment') tipo = 'Pgto Fatura';
 
-                Object.keys(grouped).sort().forEach(catName => {
-                    csv += `\n;;;--- ${catName.toUpperCase()} ---;;;\n`;
-                    
-                    let subtotal = 0;
-                    const txs = grouped[catName].sort((a,b) => new Date(a.date) - new Date(b.date));
-
-                    txs.forEach(t => {
-                        const [y, m, d] = t.date.split('-');
-                        const dataForm = `${d}/${m}/${y}`;
-                        
-                        const status = t.isPaid ? 'Pago' : 'Pendente';
-                        
-                        let tipo = 'Despesa';
-                        if(t.type === 'income') tipo = 'Receita';
-                        if(t.type === 'cc_payment') tipo = 'Pgto Fatura';
-
-                        let cartao = '-';
-                        if(t.cardId) {
-                            const c = this.state.cards.find(x => x.id === t.cardId);
-                            if(c) {
-                                cartao = c.name;
-                                if(t.invoiceMonth) {
-                                    const [iy, im] = t.invoiceMonth.split('-');
-                                    cartao += ` (${im}/${iy})`;
-                                }
+                    let cartao = '-';
+                    if (t.cardId) {
+                        const c = this.state.cards.find(x => x.id === t.cardId);
+                        if (c) {
+                            cartao = c.name;
+                            if (t.invoiceMonth) {
+                                const [iy, im] = t.invoiceMonth.split('-');
+                                cartao += ` (${im}/${iy})`;
                             }
                         }
+                    }
 
-                        let valNum = Number(t.amount);
-                        if(t.type === 'income') {
-                            totalReceitas += valNum;
-                            subtotal += valNum;
-                        } else if (t.type === 'expense' && t.type !== 'cc_payment') {
-                            totalDespesas += valNum;
-                            subtotal -= valNum;
-                        }
+                    const amt = Number(t.amount);
+                    const signed = t.type === 'income' ? amt : -amt;
+                    const valForm = this.round2(signed).toFixed(2).replace('.', ',');
 
-                        let valDisplay = Number(t.amount);
-                        if(t.type === 'expense' && t.type !== 'cc_payment') valDisplay = -Math.abs(valDisplay);
-                        const valForm = valDisplay.toFixed(2).replace('.', ',');
-
-                        csv += `${dataForm};${status};${tipo};${catName};${cartao};${this.escapeHTML(t.description)};${valForm}\n`; 
-                    });
-
-                    csv += `;;;;;Subtotal ${catName};${subtotal.toFixed(2).replace('.', ',')}\n`;
+                    return [dataForm, status, tipo, catName, cartao, t.description, valForm];
                 });
 
-                csv += `\n;;;;;TOTAL RECEITAS;${totalReceitas.toFixed(2).replace('.', ',')}\n`;
-                csv += `;;;;;TOTAL DESPESAS;${(-totalDespesas).toFixed(2).replace('.', ',')}\n`;
-                const saldoFinal = totalReceitas - totalDespesas;
-                csv += `;;;;;SALDO FINAL;${saldoFinal.toFixed(2).replace('.', ',')}\n`;
-                
+                const lines = [header, ...rows].map(cols => cols.map(c => this.csvCell(c)).join(';'));
+                const csv = lines.join('\r\n') + '\r\n';
+
                 const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); 
                 const url = URL.createObjectURL(blob); 
                 const a = document.createElement('a'); 
@@ -3648,77 +3669,84 @@
                 const profName = this.profiles.find(p => p.id === this.activeProfileId)?.name || 'Conta';
                 a.setAttribute('download', `konta_planilha_${profName.replace(/\s+/g, '_')}.csv`); 
                 a.click(); 
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
             },
 
+            // Importa o CSV exportado (ou o formato antigo), lendo colunas pelo nome do cabeçalho
             importCSV(e) { 
                 const file = e.target.files[0]; 
                 if (!file) return; 
                 const reader = new FileReader(); 
                 reader.onload = (ev) => { 
                     try { 
-                        const lines = ev.target.result.split('\n'); 
-                        let count = 0; 
-                        for(let i = 1; i < lines.length; i++) { 
-                            const line = lines[i].trim(); 
-                            if(!line) continue; 
-                            
-                            const cols = line.split(';');
-                            
-                            let date, type, catName, desc, val, isPaid = false;
+                        const text = ev.target.result.replace(/^\uFEFF/, '');
+                        const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+                        if (lines.length < 2) throw new Error('vazio');
 
-                            if (cols.length >= 7) {
-                                const [dStr, statStr, tStr, cStr, cardStr, descStr, vStr] = cols;
-                                
-                                if(dStr.includes('/')) {
-                                    const p = dStr.split('/');
-                                    date = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
-                                } else {
-                                    date = dStr;
-                                }
+                        const sep = lines[0].includes(';') ? ';' : ',';
+                        const headerCols = this.parseCSVLine(lines[0], sep).map(h => h.trim().toLowerCase());
+                        const idx = (name) => headerCols.findIndex(h => h === name);
+                        const iData = idx('data');
+                        const iStatus = idx('status');
+                        const iTipo = idx('tipo');
+                        const iCat = idx('categoria');
+                        const iDesc = headerCols.findIndex(h => h.startsWith('descri'));
+                        const iVal = idx('valor');
+                        if (iData < 0 || iDesc < 0 || iVal < 0) throw new Error('cabeçalho');
 
-                                type = 'expense';
-                                if(tStr.toLowerCase().includes('receita')) type = 'income';
-                                if(tStr.toLowerCase().includes('fatura')) type = 'cc_payment';
+                        let count = 0;
+                        let skipped = 0;
 
-                                catName = cStr;
-                                desc = descStr;
-                                
-                                val = Number(vStr.replace(',', '.').replace(/[^\d.-]/g, ''));
-                                val = Math.abs(val);
+                        for (let i = 1; i < lines.length; i++) {
+                            const cols = this.parseCSVLine(lines[i], sep);
+                            const rawDate = (cols[iData] || '').trim();
+                            const desc = (cols[iDesc] || '').trim();
+                            const rawVal = (cols[iVal] || '').trim();
+                            if (!rawDate || !desc) { skipped++; continue; }
 
-                                isPaid = statStr.toLowerCase() === 'pago';
-                            } 
-                            else if (cols.length === 5) {
-                                let tStr;
-                                [date, tStr, catName, desc, val] = cols;
-                                type = tStr.trim();
-                                val = Number(val);
+                            let date;
+                            if (rawDate.includes('/')) {
+                                const p = rawDate.split('/');
+                                date = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
                             } else {
-                                continue;
+                                date = rawDate;
                             }
 
-                            if(date && type && desc && val !== undefined && !isNaN(val)) { 
-                                let cat = this.state.categories.find(c => c.name.toLowerCase() === catName.toLowerCase()); 
-                                if(!cat) { 
-                                    cat = { id: this.generateId(), name: catName, icon: '📁', type, budgetLimit: 0 }; 
-                                    this.state.categories.push(cat); 
-                                } 
-                                this.state.transactions.push({ 
-                                    id: this.generateId(), 
-                                    date, 
-                                    type, 
-                                    categoryId: cat.id, 
-                                    description: desc, 
-                                    amount: val,
-                                    isPaid: isPaid
-                                }); 
-                                count++; 
-                            } 
+                            const tStr = iTipo >= 0 ? (cols[iTipo] || '').toLowerCase() : '';
+                            let type = 'expense';
+                            if (tStr.includes('receita') || tStr.includes('income')) type = 'income';
+                            if (tStr.includes('fatura')) type = 'cc_payment';
+
+                            let s = rawVal.replace(/[R$\s]/g, '');
+                            if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+                            const val = Math.abs(Number(s));
+                            if (isNaN(val)) { skipped++; continue; }
+
+                            const catName = iCat >= 0 ? (cols[iCat] || '').trim() : '';
+                            const statusStr = iStatus >= 0 ? (cols[iStatus] || '').trim().toLowerCase() : '';
+                            const isPaid = statusStr === 'pago';
+
+                            let cat = this.state.categories.find(c => c.name.toLowerCase() === catName.toLowerCase());
+                            if (!cat) {
+                                cat = { id: this.generateId(), name: catName || 'Importadas', icon: '📁', type: type === 'income' ? 'income' : 'expense', budgetLimit: 0 };
+                                this.state.categories.push(cat);
+                            }
+
+                            this.state.transactions.push({ 
+                                id: this.generateId(), 
+                                date, 
+                                type, 
+                                categoryId: cat.id, 
+                                description: desc, 
+                                amount: this.round2(val),
+                                isPaid
+                            }); 
+                            count++; 
                         } 
                         this.saveData(); 
-                        Swal.fire('Pronto!', `${count} transações importadas!`, 'success').then(() => { location.reload(); }); 
+                        Swal.fire('Pronto!', `${count} transações importadas${skipped ? ` (${skipped} linhas ignoradas)` : ''}!`, 'success').then(() => { location.reload(); }); 
                     } catch (err) { 
-                        Swal.fire('Ops!', 'Verifique o arquivo CSV.', 'error'); 
+                        Swal.fire('Ops!', 'Verifique o arquivo CSV. Use um arquivo exportado por este app.', 'error'); 
                     } 
                 }; 
                 reader.readAsText(file); 
