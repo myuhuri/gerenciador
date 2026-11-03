@@ -787,15 +787,19 @@
                 this.state.debts = this.state.debts.filter(d => {
                     const linked = this.state.transactions.filter(t => t.debtId === d.id);
                     const isSplit = (d.title || '').startsWith('Divisão: ');
+                    // Pagamentos lançados direto na dívida (payDebt): debtId, sem splitName, sem paidByTxId, não adiantamento
+                    const payments = linked.filter(t => t.isPaid && !t.paidByTxId && !t.isAdvance && !t.splitName);
+                    const paymentsSum = payments.reduce((s, t) => s + Number(t.amount), 0);
+
                     if (isSplit) {
                         const shares = linked.filter(t => t.splitName && !t.isAdvance);
                         if (shares.length === 0) return false;
                         d.totalAmount = this.round2(shares.reduce((s, t) => s + Number(t.amount), 0));
-                        d.paidAmount = this.round2(shares.filter(t => t.friendHasPaid).reduce((s, t) => s + Number(t.amount), 0));
+                        // Partes dos amigos já pagas + pagamentos lançados na dívida
+                        const sharesPaid = shares.filter(t => t.friendHasPaid).reduce((s, t) => s + Number(t.amount), 0);
+                        d.paidAmount = this.round2(sharesPaid + paymentsSum);
                     } else {
-                        d.paidAmount = this.round2(linked
-                            .filter(t => t.isPaid && !t.paidByTxId && !t.isAdvance && !t.splitName)
-                            .reduce((s, t) => s + Number(t.amount), 0));
+                        d.paidAmount = this.round2(paymentsSum);
                     }
                     return true;
                 });
@@ -3021,7 +3025,7 @@
                         <p class="text-sm mb-3">Resta: ${this.formatCurrency(remaining)}</p>
                         <input type="hidden" id="pay-plan-remaining" value="${remaining}">
                         <div id="pay-plan-list" class="flex flex-col gap-2 text-left max-h-64 overflow-y-auto pr-1"></div>
-                        <button type="button" onclick="window.addPayRow('', '', false)" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-3 py-2.5 rounded-lg w-full mt-3 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors">+ Adicionar pagamento</button>
+                        <button type="button" onclick="window.addPayRow('', '', true)" class="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-3 py-2.5 rounded-lg w-full mt-3 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors">+ Adicionar pagamento</button>
                         <p class="text-[11px] font-bold text-slate-500 mt-3">Sobra a distribuir: R$ <span id="pay-plan-left">0,00</span></p>
                     `, 
                     didOpen: () => { window.addPayRow(today, remaining, true); },
