@@ -167,8 +167,24 @@
             <div class="grid-auto-fit w-full">
                 <div class="card bg-gradient-to-br from-indigo-500 to-indigo-700 text-white border-none relative overflow-hidden shadow-xl shadow-indigo-500/30 flex flex-col justify-center min-h-[130px]">
                     <i class="ph ph-wallet text-7xl absolute -right-2 -bottom-4 opacity-20 transform -rotate-12"></i>
-                    <p class="text-indigo-100 text-xs md:text-sm font-bold uppercase tracking-wide truncate">Saldo Livre (Neste Mês)</p>
+                    <p class="text-indigo-100 text-xs md:text-sm font-bold uppercase tracking-wide truncate">Saldo Livre Total (Neste Mês)</p>
                     <h3 class="text-3xl md:text-4xl font-black mt-1 truncate" id="dash-balance">R$ 0,00</h3>
+                </div>
+
+                <div class="card flex flex-col justify-center min-h-[130px]">
+                    <div class="flex items-center gap-2 mb-2 min-w-0">
+                        <div class="p-2 bg-amber-100 dark:bg-amber-500/20 rounded-full flex-shrink-0 text-amber-600"><i class="ph ph-money text-lg"></i></div>
+                        <p class="text-[11px] md:text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide truncate">Físico (em mãos)</p>
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-slate-100 mt-1 truncate" id="dash-balance-fisico">R$ 0,00</h3>
+                </div>
+
+                <div class="card flex flex-col justify-center min-h-[130px]">
+                    <div class="flex items-center gap-2 mb-2 min-w-0">
+                        <div class="p-2 bg-indigo-100 dark:bg-indigo-500/20 rounded-full flex-shrink-0 text-indigo-600"><i class="ph ph-bank text-lg"></i></div>
+                        <p class="text-[11px] md:text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide truncate">Virtual (banco)</p>
+                    </div>
+                    <h3 class="text-2xl md:text-3xl font-black text-slate-800 dark:text-slate-100 mt-1 truncate" id="dash-balance-virtual">R$ 0,00</h3>
                 </div>
                 
                 <div class="card flex flex-col justify-center min-h-[130px]">
@@ -585,7 +601,7 @@
             });
         };
 
-        window.addPayRow = function(date = '', val = '', paid = true) {
+        window.addPayRow = function(date = '', val = '', paid = true, wallet = 'virtual') {
             const list = document.getElementById('pay-plan-list');
             if(!list) return;
             const div = document.createElement('div');
@@ -602,6 +618,7 @@
                         <input type="number" step="0.01" class="swal2-input !mt-0 !text-sm pay-val w-full" placeholder="0.00" oninput="window.calcPayPlan()" value="${val}">
                     </div>
                 </div>
+                ${app.walletSelect('', wallet, 'pay-wallet')}
                 <label class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 ml-1">
                     <input type="checkbox" class="pay-paid w-4 h-4" ${paid ? 'checked' : ''}> Já foi pago
                 </label>
@@ -911,6 +928,7 @@
                     instMode: g('swal-installment-mode')?.value || 'total',
                     isPaid: g('swal-tx-ispaid') ? g('swal-tx-ispaid').checked : true,
                     isHistory: !!g('swal-tx-history')?.checked,
+                    wallet: g('swal-tx-wallet')?.value || 'virtual',
                     isSplit,
                     friends
                 };
@@ -954,7 +972,8 @@
                     installmentGroupId: group,
                     type: v.type,
                     paymentMethod: card ? 'credit' : v.paymentMethod,
-                    cardId: card ? card.id : null
+                    cardId: card ? card.id : null,
+                    wallet: card ? 'virtual' : (v.wallet || 'virtual')
                 };
 
                 friends.forEach(f => {
@@ -967,7 +986,7 @@
                         this.state.transactions.push({
                             id: this.generateId(), purchaseId, isAdvance: true, debtId: f.debtId,
                             description: `Adiantamento: ${v.desc} (${f.name})${n > 1 ? ` - ${Math.min(f.paid, n)} parc.` : ''}`,
-                            amount: paidAmt, date: v.date, type: 'income', categoryId: recCat.id, isPaid: true
+                            amount: paidAmt, date: v.date, type: 'income', categoryId: recCat.id, isPaid: true, wallet: v.wallet || 'virtual'
                         });
                     }
                 });
@@ -1004,14 +1023,26 @@
                 return purchaseId;
             },
 
-            // Fluxo de caixa do mês (ou de todos se monthKey = ''). Só transações já pagas.
-            getCashFlow(monthKey) {
-                const debtCat = this.state.categories.find(c => c.name === 'Recebimento de Dívida');
-                const debtCatId = debtCat ? debtCat.id : null;
-                const paidTx = this.state.transactions.filter(t => this.inMonth(t, monthKey) && t.isPaid);
+            walletOf(t) {
+                return t.wallet === 'fisico' ? 'fisico' : 'virtual';
+            },
 
+            walletSelect(id = '', value = 'virtual', cls = '') {
+                const v = value === 'fisico' ? 'fisico' : 'virtual';
+                return `<select ${id ? `id="${id}"` : ''} class="swal2-select !mt-0 !text-sm ${cls}">
+                    <option value="virtual" ${v === 'virtual' ? 'selected' : ''}>💳 Virtual (banco / conta digital)</option>
+                    <option value="fisico" ${v === 'fisico' ? 'selected' : ''}>💵 Físico (espécie / em mãos)</option>
+                </select>`;
+            },
+
+            // Fluxo de caixa do mês. wallet = 'fisico' | 'virtual' | null (total). Só transações já pagas.
+            getCashFlow(monthKey, wallet = null) {
+                const inW = (w) => !wallet || w === wallet;
+                const paidTx = this.state.transactions.filter(t => this.inMonth(t, monthKey) && t.isPaid && inW(this.walletOf(t)));
+
+                // Todas as receitas pagas entram no saldo, inclusive recebimentos de dívidas
                 const income = this.round2(paidTx
-                    .filter(t => t.type === 'income' && t.categoryId !== debtCatId)
+                    .filter(t => t.type === 'income')
                     .reduce((a, b) => a + Number(b.amount), 0));
 
                 const expense = this.round2(paidTx
@@ -1019,9 +1050,16 @@
                     .reduce((a, b) => a + Number(b.amount), 0));
 
                 const reserved = this.round2((this.state.goals || [])
+                    .filter(g => inW(g.wallet === 'fisico' ? 'fisico' : 'virtual'))
                     .reduce((a, g) => a + Number(g.appSavedAmount || 0), 0));
 
                 return { income, expense, reserved, balance: this.round2(income - expense - reserved) };
+            },
+
+            getBalances(monthKey) {
+                const fisico = this.getCashFlow(monthKey, 'fisico');
+                const virtual = this.getCashFlow(monthKey, 'virtual');
+                return { fisico, virtual, total: this.round2(fisico.balance + virtual.balance) };
             },
 
             updateStatusIcon() {
@@ -1249,6 +1287,7 @@
                             date: dateStr, type: rec.type, categoryId: rec.categoryId, 
                             isRecurringAuto: true, isPaid: false, 
                             paymentMethod: rec.paymentMethod || 'pix',
+                            wallet: rec.wallet === 'fisico' ? 'fisico' : 'virtual',
                             cardId: card ? card.id : null,
                             invoiceMonth: invMonth,
                             dueDate: (rec.paymentMethod === 'boleto') ? dateStr : null
@@ -1325,8 +1364,10 @@
 
                 const filter = document.getElementById('dash-month-filter').value;
 
-                const flow = this.getCashFlow(filter);
-                document.getElementById('dash-balance').innerText = this.formatCurrency(flow.balance);
+                const bal = this.getBalances(filter);
+                document.getElementById('dash-balance').innerText = this.formatCurrency(bal.total);
+                document.getElementById('dash-balance-fisico').innerText = this.formatCurrency(bal.fisico.balance);
+                document.getElementById('dash-balance-virtual').innerText = this.formatCurrency(bal.virtual.balance);
 
                 // Despesas/receitas do mês usam o mesmo critério do extrato (txMonth)
                 const monthTx = this.state.transactions.filter(t => this.inMonth(t, filter) && t.type !== 'cc_payment');
@@ -1625,6 +1666,8 @@
                         <div class="text-left px-4">
                             <label class="block text-xs font-bold text-slate-500 mb-1">Valor do Pagamento (R$):</label>
                             <input id="swal-inv-val" type="number" step="0.01" class="swal2-input !mt-0 !bg-white dark:!bg-slate-800" value="${total.toFixed(2)}">
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-3">Pago com:</label>
+                            ${this.walletSelect('swal-inv-wallet', 'virtual')}
                             <p class="text-[10px] text-slate-400 font-bold mt-2 leading-tight">Pagar agora lança a saída no saldo de hoje. Se essa fatura já foi paga antes, use "Já estava paga" para só registrar no histórico.</p>
                         </div>
                     `,
@@ -1635,12 +1678,16 @@
                     denyButtonText: 'Já estava paga (só histórico)',
                     cancelButtonText: 'Cancelar',
                     customClass: { confirmButton: 'swal2-confirm !bg-emerald-500', denyButton: 'swal2-deny !bg-slate-500' },
-                    preConfirm: () => Number(document.getElementById('swal-inv-val').value)
+                    preConfirm: () => ({
+                        amount: Number(document.getElementById('swal-inv-val').value),
+                        wallet: document.getElementById('swal-inv-wallet').value
+                    })
                 });
 
                 if (res.isDenied) { this.markInvoiceAsHistory(cardId, invoiceMonth); return; }
 
-                const amount = res.value;
+                const amount = res.value ? res.value.amount : 0;
+                const payWallet = res.value ? res.value.wallet : 'virtual';
                 if (amount) {
                     if (amount > total + 0.01) { Swal.fire('Erro', 'Você não pode pagar mais do que o valor da fatura.', 'error'); return; }
 
@@ -1655,7 +1702,8 @@
                         type: 'cc_payment',
                         paidCardId: cardId,
                         paidInvoiceMonth: invoiceMonth,
-                        isPaid: true
+                        isPaid: true,
+                        wallet: payWallet
                     });
 
                     cardTxs.forEach(t => t.isPaid = true);
@@ -1683,7 +1731,7 @@
                     }
 
                     cardTxs.filter(t => t.splitName && !t.friendHasPaid).forEach(tx => {
-                        this.registerFriendPayment(tx, today, paymentId);
+                        this.registerFriendPayment(tx, today, paymentId, payWallet);
                     });
 
                     this.saveData(); this.renderCards();
@@ -1811,7 +1859,7 @@
 
             // Marca a parcela do amigo como paga e cria a receita ligada a ela (paidByTxId).
             // A dívida é recalculada em saveData().
-            registerFriendPayment(tx, date, paymentId = null) {
+            registerFriendPayment(tx, date, paymentId = null, wallet = 'virtual') {
                 tx.friendHasPaid = true;
                 if (paymentId) tx.paidByPaymentId = paymentId;
 
@@ -1828,7 +1876,8 @@
                     date,
                     type: 'income',
                     categoryId: rCat.id,
-                    isPaid: true
+                    isPaid: true,
+                    wallet: wallet === 'fisico' ? 'fisico' : 'virtual'
                 };
                 if (paymentId) incomeTx.friendPaymentOf = paymentId;
                 this.state.transactions.push(incomeTx);
@@ -1854,9 +1903,15 @@
                         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Desfeito', showConfirmButton: false, timer: 1500});
                     }
                 } else {
-                    const res = await Swal.fire({title: 'Confirmar Pagamento', text: 'Tem certeza que seu amigo te pagou o valor desta parcela?', showCancelButton: true, confirmButtonText: 'Sim, pagou', cancelButtonText: 'Cancelar', customClass: {confirmButton: 'swal2-confirm !bg-emerald-500'}});
+                    const res = await Swal.fire({
+                        title: 'Confirmar Pagamento',
+                        html: `<p class="mb-3 text-sm font-bold">Seu amigo te pagou o valor desta parcela?</p>${this.walletSelect('swal-recv-wallet', 'virtual')}`,
+                        showCancelButton: true, confirmButtonText: 'Sim, pagou', cancelButtonText: 'Cancelar',
+                        customClass: {confirmButton: 'swal2-confirm !bg-emerald-500'},
+                        preConfirm: () => document.getElementById('swal-recv-wallet').value
+                    });
                     if(res.isConfirmed) {
-                        this.registerFriendPayment(tx, this.todayISO());
+                        this.registerFriendPayment(tx, this.todayISO(), null, res.value);
                         this.saveData(); this.renderFriends(); 
                         if(document.getElementById('dashboard').classList.contains('active')) this.renderDashboard();
                         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marcado como Pago!', showConfirmButton: false, timer: 1500});
@@ -1878,17 +1933,18 @@
                 const total = this.round2(txs.reduce((s, t) => s + Number(t.amount), 0));
                 const res = await Swal.fire({
                     title: 'Confirmar Pagamento do Mês',
-                    html: `Marcar todas as <b>${txs.length}</b> parcelas pendentes de <b>${this.escapeHTML(name)}</b> em <b>${monthKey.split('-').reverse().join('/')}</b> como pagas?<br><br>Total: <b class="text-emerald-500">${this.formatCurrency(total)}</b>`,
+                    html: `Marcar todas as <b>${txs.length}</b> parcelas pendentes de <b>${this.escapeHTML(name)}</b> em <b>${monthKey.split('-').reverse().join('/')}</b> como pagas?<br><br>Total: <b class="text-emerald-500">${this.formatCurrency(total)}</b><div class="text-left mt-3">${this.walletSelect('swal-recv-wallet', 'virtual')}</div>`,
                     icon: 'question',
                     showCancelButton: true,
                     confirmButtonText: 'Sim, recebi',
                     cancelButtonText: 'Cancelar',
-                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500' }
+                    customClass: { confirmButton: 'swal2-confirm !bg-emerald-500' },
+                    preConfirm: () => document.getElementById('swal-recv-wallet').value
                 });
                 if (!res.isConfirmed) return;
 
                 const today = this.todayISO();
-                txs.forEach(tx => this.registerFriendPayment(tx, today));
+                txs.forEach(tx => this.registerFriendPayment(tx, today, null, res.value));
 
                 this.saveData();
                 this.renderFriends();
@@ -2195,6 +2251,8 @@
                             <option value="income">Receita (Entrada)</option>
                         </select>
                         <select id="swal-tx-cat" class="swal2-select">${catOpts('expense')}</select>
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-3 px-2 text-left">Dinheiro sai/entra de:</label>
+                        ${this.walletSelect('swal-tx-wallet', 'virtual')}
 
                         <div id="tx-expense-options" style="display: block;">
                             <div class="mt-5 text-left px-2 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -2354,6 +2412,8 @@
 
                             <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Categoria</label>
                             <select id="swal-tx-cat" class="swal2-select !mt-0">${catOpts(tx.type)}</select>
+                            <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Dinheiro sai/entra de:</label>
+                            ${this.walletSelect('swal-tx-wallet', ref.wallet)}
 
                             <label class="block text-xs font-bold text-slate-500 mb-1 mt-4">Método de Pagamento</label>
                             <select id="swal-tx-method" class="swal2-select !mt-0 font-bold" onchange="window.toggleMethodBoxes(this.value)">
@@ -2578,6 +2638,12 @@
                         }
                     } else if (tx.paymentMethod === 'boleto') {
                         cardBadge = `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-slate-600 uppercase"><i class="ph ph-barcode"></i> BOLETO${tx.dueDate ? ' (' + tx.dueDate.split('-').reverse().slice(0,2).join('/') + ')' : ''}</span>`;
+                    }
+
+                    if (!tx.cardId && tx.type !== 'cc_payment') {
+                        cardBadge += tx.wallet === 'fisico'
+                            ? `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-emerald-600 uppercase">💵 Físico</span>`
+                            : `<span class="px-2 py-0.5 rounded text-[9px] text-white bg-indigo-600 uppercase">💳 Virtual</span>`;
                     }
 
                     if (tx.type === 'cc_payment') { iconHtml = `<div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center text-base sm:text-lg flex-shrink-0 border border-indigo-100 dark:border-indigo-800"><i class="ph ph-receipt"></i></div>`; }
@@ -2964,7 +3030,8 @@
                         const rows = [...document.querySelectorAll('.pay-row')].map(r => ({
                             date: r.querySelector('.pay-date').value,
                             val: this.round2(Number(r.querySelector('.pay-val').value)),
-                            paid: r.querySelector('.pay-paid').checked
+                            paid: r.querySelector('.pay-paid').checked,
+                            wallet: r.querySelector('.pay-wallet').value
                         }));
                         if (rows.length === 0) { Swal.showValidationMessage('Adicione pelo menos um pagamento!'); return false; }
                         if (rows.some(r => !r.date || !r.val || r.val <= 0)) { Swal.showValidationMessage('Preencha data e valor de todos os pagamentos!'); return false; }
@@ -2989,7 +3056,8 @@
                             date: r.date, 
                             type: txType, 
                             categoryId: cat.id,
-                            isPaid: r.paid
+                            isPaid: r.paid,
+                            wallet: r.wallet
                         });
                     });
                     
@@ -3134,13 +3202,16 @@
                         <input id="swal-g-val" type="number" step="0.01" class="swal2-input" placeholder="Valor Alvo (R$)">
                         <div class="mt-4 text-left px-3 text-xs font-bold text-slate-500">Valor já guardado fora do app (Opcional)</div>
                         <input id="swal-g-init" type="number" step="0.01" class="swal2-input !mt-1" placeholder="R$ 0,00">
+                        <div class="mt-4 text-left px-3 text-xs font-bold text-slate-500">Dinheiro guardado em:</div>
+                        ${this.walletSelect('swal-g-wallet', 'virtual')}
                     `, 
                     focusConfirm: false, showCancelButton: true, confirmButtonText: 'Criar', cancelButtonText: 'Cancelar', 
                     preConfirm: () => { 
                         return { 
                             title: document.getElementById('swal-g-title').value, 
                             targetAmount: Number(document.getElementById('swal-g-val').value),
-                            initAmount: Number(document.getElementById('swal-g-init').value) || 0
+                            initAmount: Number(document.getElementById('swal-g-init').value) || 0,
+                            wallet: document.getElementById('swal-g-wallet').value
                         } 
                     } 
                 });
@@ -3150,6 +3221,7 @@
                         title: formValues.title, 
                         targetAmount: formValues.targetAmount, 
                         savedAmount: formValues.initAmount,
+                        wallet: formValues.wallet === 'fisico' ? 'fisico' : 'virtual',
                         appSavedAmount: 0 
                     }); 
                     this.saveData(); this.renderGoals(); 
@@ -3386,6 +3458,8 @@
                         </select>
                         <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Categoria</label>
                         <select id="r-cat" class="swal2-select !mt-0">${catOpts}</select>
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Dinheiro sai/entra de:</label>
+                        ${this.walletSelect('r-wallet', 'virtual')}
                         
                         <div class="mt-4 text-left px-2 border-t border-slate-200 dark:border-slate-700 pt-4">
                             <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200 cursor-pointer mb-2">
@@ -3442,6 +3516,7 @@
                             type: document.getElementById('r-type').value, 
                             categoryId: document.getElementById('r-cat').value, 
                             lastProcessedMonth: null,
+                            wallet: document.getElementById('r-wallet').value,
                             isSplit: isSplit,
                             friends: friends,
                             myVal: myVal
@@ -3502,6 +3577,8 @@
                             <option value="income" ${rec.type === 'income' ? 'selected' : ''}>Receita Fixa</option>
                         </select>
                         <select id="r-cat" class="swal2-select">${catOpts}</select>
+                        <label class="block text-xs font-bold text-slate-500 mb-1 mt-4 text-left px-2">Dinheiro sai/entra de:</label>
+                        ${this.walletSelect('r-wallet', rec.wallet)}
                         ${isSplitHtml}
                     `,
                     didOpen: () => {
@@ -3547,6 +3624,7 @@
                             cardId: method === 'credit' ? document.getElementById('r-card').value : null,
                             type: document.getElementById('r-type').value,
                             categoryId: document.getElementById('r-cat').value,
+                            wallet: document.getElementById('r-wallet').value,
                             isSplit: isSplit,
                             friends: friends,
                             myVal: myVal
